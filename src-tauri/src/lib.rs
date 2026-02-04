@@ -1,6 +1,8 @@
+use std::sync::{Arc, Mutex};
+use tauri::AppHandle;
+use tauri::Listener;
 use std::result::Result as StdResult;
 use tokio::sync::oneshot;
-use std::time::Duration;
 use windows::{
     core::*,
     Foundation::*,
@@ -17,7 +19,19 @@ use windows::{
     音声再生は非同期で行われるが、待機しないと再生がすぐ終了し、一聴すると音声が再生されていないように聞こえる。なので音声再生の完了を待機することと、割り込みで音声再生を停止する処理が必要。
     tokioのoneshot::channelで非同期で再生の完了を通知することで、再生の待機と割り込み時の再生終了を行うことができる。
  */
-async fn do_speak(text: &str) -> Result<()> {
+async fn do_speak(app: AppHandle, text: &str) -> Result<()> {
+    let (tx, rx) = oneshot::channel::<()>();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+    let tx1 = Arc::clone(&tx);
+    let tx2 = Arc::clone(&tx);
+
+    app.listen("stop_speak", move |_event| {
+        // stop_speakがemitされたらtokioのchannelに送信して処理を停止。
+        if let Some(tx1) = tx1.lock().unwrap().take() {
+            let _ = tx1.send(());
+        }
+    });
+
     // 音声合成エンジン作成
     let synth = SpeechSynthesizer::new()?;
 
@@ -35,13 +49,10 @@ async fn do_speak(text: &str) -> Result<()> {
 
     // -------- 再生終了待ち用チャネル --------
 
-    let (tx, rx) = oneshot::channel::<()>();
-    let mut tx = Some(tx);
-
     let token = player.MediaEnded(&TypedEventHandler::new(
         move |_, _| {
-            if let Some(tx) = tx.take() {
-                let _ = tx.send(());
+            if let Some(tx2) = tx2.lock().unwrap().take() {
+                let _ = tx2.send(());
             }
             Ok(())
         },
@@ -58,9 +69,9 @@ async fn do_speak(text: &str) -> Result<()> {
 }
 
 #[tauri::command]
-async fn speak(text: String) -> StdResult<(), String> {
+async fn speak(app: AppHandle, text: String) -> StdResult<(), String> {
     println!("speak: {}", text);
-    match do_speak(&text).await {
+    match do_speak(app, &text).await {
         Ok(_) => return Ok(()),
         Err(e) => return Err(format!("failed to do speak: {:?}", e)),
     }
