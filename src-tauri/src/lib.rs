@@ -186,6 +186,71 @@ fn get_cwd() -> StdResult<PathBuf, Error> {
 }
 
 #[tauri::command]
+async fn cmd_cd(arg: Option<String>) -> StdResult<String, Error> {
+    let config_path = get_config_path()?;
+    let mut config = load_config(&config_path)?;
+
+    // 現在のcwd
+    let current_cwd = if let Some(scwd) = &config.cwd {
+        PathBuf::from(scwd)
+    } else {
+        get_exe_dir()?
+    };
+
+    // 引数なしならホームディレクトリ
+    let target_path = match arg {
+        Some(v) => {
+            let path = PathBuf::from(&v);
+
+            if path.is_absolute() {
+                path
+            } else {
+                current_cwd.join(path)
+            }
+        }
+
+        None => {
+            match dirs::home_dir() {
+                Some(v) => v,
+                None => {
+                    return err_runtime!("failed to get home directory");
+                }
+            }
+        }
+    };
+
+    // 正規化
+    let mut next_cwd = match target_path.canonicalize() {
+        Ok(v) => v,
+        Err(_) => {
+            return err_runtime!(
+                "directory not found: {}",
+                target_path.to_string_lossy()
+            );
+        }
+    };
+
+    // ディレクトリ確認
+    if !next_cwd.is_dir() {
+        return err_runtime!(
+            "not a directory: {}",
+            next_cwd.to_string_lossy()
+        );
+    }
+
+
+    let mut scwd = next_cwd.to_string_lossy().to_string();
+    scwd = scwd.replace("\\\\?\\", "");
+
+    // 保存
+    config.cwd = Some(scwd.clone());
+
+    save_config(&config_path, &config)?;
+
+    Ok(scwd)
+}
+
+#[tauri::command]
 async fn cwd() -> StdResult<String, Error> {
     let cwd = get_cwd()?;
     Ok(cwd.to_string_lossy().to_string())
@@ -222,6 +287,7 @@ pub fn run() {
             speak,
             list_cwd,
             cwd,
+            cmd_cd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -18,14 +18,14 @@ impl serde::Serialize for Error {
 
 #[macro_export]
 macro_rules! err_runtime {
-    ($fmt:expr $(, $args:tt)*) => {
+    ($fmt:expr $(, $args:expr)*) => {
         Err(Error::Runtime(format!($fmt $(, $args)*)))
     }
 }
 
 #[macro_export]
 macro_rules! err_file_io {
-    ($fmt:expr $(, $args:tt)*) => {
+    ($fmt:expr $(, $args:expr)*) => {
         Err(Error::FileIO(format!($fmt $(, $args)*)))
     }
 }
