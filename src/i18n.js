@@ -129,4 +129,8 @@ export default new class I18N {
 	filesIsEmpty () {
 		return this.get('ファイルリストはカラです。')
 	}
+
+	success () {
+		return this.get('成功。')
+	}
 }

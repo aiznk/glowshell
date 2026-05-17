@@ -185,17 +185,8 @@ class Shell extends nue.Div {
     this.add(newRow) 
     newRow.focus()
 
-    switch (result.exitStatus) {
-    case 0:
-      switch (result.cmdName) {
-      case 'mkdir': await this.emit('speak', i18n.doneMkdir()); break
-      case 'touch': await this.emit('speak', i18n.doneTouch()); break
-      case 'rm': await this.emit('speak', i18n.doneRm()); break
-      }
-      break
-    default:
+    if (result.exitStatus !== 0) {
       await this.emit('speak', i18n.failedCommandExec(result.error))
-      break
     }
   }
 }

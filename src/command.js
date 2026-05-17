@@ -58,7 +58,7 @@ export class Command {
       return ret
     }
 
-    return ret
+    return this.unsyncSpeak(ret, i18n.doneMkdir())
   }
 
   async execTouch (_) {
@@ -81,7 +81,7 @@ export class Command {
       return ret
     }
 
-    return ret
+    return this.unsyncSpeak(ret, i18n.doneTouch())
   }
 
   async execRm (_) {
@@ -104,7 +104,7 @@ export class Command {
       return ret
     }
 
-    return ret
+    return this.unsyncSpeak(ret, i18n.doneRm())
   }
 
   async unsyncSpeak (result /* CommandResult */, text) {
