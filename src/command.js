@@ -24,9 +24,50 @@ export class Command {
   async exec (result=null /* CommandResult */) {
     switch (this.name) {
     case 'cat': return await this.execCat(result); break
+    case 'lcat': return await this.execLcat(result); break
     case 'cd': return await this.execCd(result); break
     case 'ls': return await this.execLs(result); break
     }
+  }
+
+  async execLcat (result) {
+    let ret = new CommandResult()
+    ret.cmdName = 'lcat'    
+
+    let files = this.model.refFiles.value
+    let ifiles = []
+
+    for (let arg of this.args) {
+      let i = parseInt(arg)
+      if (isNaN(i)) {
+        continue
+      }
+      if (i >= 0 && i < files.length) {
+        ifiles.push(files[i])
+      } else {
+        continue
+      }
+    }
+
+    if (!ifiles.length) {
+      ret.exitStatus = 1
+      ret.error = '参照できるファイルがありません。'
+      return ret
+    }
+
+    try {
+      ret.text = await invoke('cmd_cat', {
+        args: ifiles,
+      })
+    } catch (e) {
+      console.error(e)
+      ret.exitStatus = 1
+      ret.error = e
+      return ret
+    }
+
+    ret.exitStatus = 0
+    return ret
   }
 
   async execCat (result) {

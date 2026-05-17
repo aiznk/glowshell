@@ -6,6 +6,7 @@ import {
   MODE_HAS_LIST_FILES,
   MODE_DONE_CD,
   MODE_DONE_CAT,
+  MODE_HELP,
 } from './consts.js'
 import i18n from './i18n.js'
 import {Command, CommandLine, CommandResult} from './command.js'
@@ -42,10 +43,14 @@ class ShellInput extends nue.Input {
     this.emit('enterShellInput', this.getValue())
   }
 
-  onKeydown (ev) {
+  async onKeydown (ev) {
     switch (ev.code) {
     default:
-      this.emit('keydownShellInput', ev)
+      if (!this.getValue().length && ev.code === 'Backspace') {
+        await this.emit('isEmptyShellInput', ev)
+      } else {
+        await this.emit('keydownShellInput', ev)
+      }
       break
     case 'NumpadEnter':
     case 'Enter':
@@ -163,7 +168,10 @@ class Shell extends nue.Div {
       this.add(p)
       this.model.refFiles.value = result.files
       this.model.refShellMode.value = MODE_HAS_LIST_FILES
-    } else if (result.cmdName === 'cat' && result.text) {
+    } else if (
+      (result.cmdName === 'cat' || result.cmdName === 'lcat') && 
+      result.text
+    ) {
       this.model.refText.value = result.text
       this.model.refShellMode.value = MODE_DONE_CAT      
       for (let line of result.text.replace('\r\n', '\n').split('\n')) {
@@ -273,9 +281,16 @@ class Root extends nue.Root {
 
   async onWindowKeydown (ev) {
     switch (ev.code) {
+    case 'KeyH':
+      if (ev.ctrlKey) {
+        this.model.refShellMode.value = MODE_HELP
+        await this.speak(i18n.helpDesc())
+      }
+      break
     case 'KeyC':
       if (ev.ctrlKey) {
         this.model.refProcStep.value += 1
+        await this.speak(i18n.cancelled())
       }
       break
     case 'KeyI':
@@ -290,6 +305,12 @@ class Root extends nue.Root {
     }
 
     switch (this.model.refShellMode.value) {
+    case MODE_HELP:
+      switch (ev.code) {
+      case 'Digit1': await this.speak(i18n.appAbout()); break
+      case 'Digit2': await this.speak(i18n.commandHelp()); break
+      }
+      break
     case MODE_HAS_LIST_FILES:
       switch (ev.code) {
       case 'KeyQ':
@@ -332,9 +353,12 @@ class Root extends nue.Root {
 
   async receive (key, val) {
     switch (key) {
-    case 'keydownShellInput': {
+    case 'isEmptyShellInput':
+      await this.speak(i18n.isEmptyShellInput())
+      break
+    case 'keydownShellInput':
       await this.speak(fixSpeakText(val.key))
-    } break
+      break
     case 'speak': await this.speak(val); break
     }
   }
@@ -405,15 +429,4 @@ window.addEventListener("DOMContentLoaded", async () => {
   let root = new Root()
   await root.setup()
   root.mount('#app')
-  
-  // try {
-  //   await invoke('speak', { text: 'こんにちは、世界。' })
-  // } catch (e) {
-  //   console.error(e)
-  //   return
-  // }
-
-  // setTimeout(() => {
-  //   emit('stop_speak')
-  // }, 500)
 });

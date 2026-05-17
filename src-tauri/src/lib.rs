@@ -188,7 +188,9 @@ fn get_cwd() -> StdResult<PathBuf, Error> {
 }
 
 #[tauri::command]
-async fn cmd_cat(args: Option<Vec<String>>) -> StdResult<String, Error> {
+async fn cmd_cat(
+    args: Option<Vec<String>>,
+) -> StdResult<String, Error> {
     let cwd = get_cwd()?;
 
     let args = match args {
