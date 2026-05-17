@@ -1,4 +1,6 @@
 mod error;
+mod i18n;
+mod consts;
 use error::{Error};
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
@@ -186,6 +188,73 @@ fn get_cwd() -> StdResult<PathBuf, Error> {
 }
 
 #[tauri::command]
+async fn cmd_cat(args: Option<Vec<String>>) -> StdResult<String, Error> {
+    let cwd = get_cwd()?;
+
+    let args = match args {
+        Some(v) => v,
+        None => {
+            return err_runtime!("{}", i18n::missing_file_path());
+        }
+    };
+
+    if args.is_empty() {
+        return err_runtime!("{}", i18n::missing_file_path());
+    }
+
+    let mut result = String::new();
+
+    for arg in args {
+        let path = PathBuf::from(&arg);
+
+        let target_path = if path.is_absolute() {
+            path
+        } else {
+            cwd.join(path)
+        };
+
+        // 正規化
+        let target_path = match target_path.canonicalize() {
+            Ok(v) => v,
+            Err(_) => {
+                return err_runtime!(
+                    "{}",
+                    i18n::file_nout_found(target_path.to_string_lossy().to_string())
+                );
+            }
+        };
+
+        // ファイル確認
+        if !target_path.is_file() {
+            return err_runtime!(
+                "{}",
+                i18n::not_a_file(target_path.to_string_lossy().to_string())
+            );
+        }
+
+        // 読み込み
+        let content = match fs::read_to_string(&target_path) {
+            Ok(v) => v,
+            Err(_) => {
+                return err_file_io!(
+                    "{}",
+                    i18n::failed_to_read_file(target_path.to_string_lossy().to_string())
+                );
+            }
+        };
+
+        result.push_str(&content);
+
+        // 複数ファイル時は改行区切り
+        if !result.ends_with('\n') {
+            result.push('\n');
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
 async fn cmd_ls(arg: Option<String>) -> StdResult<Vec<String>, Error> {
     let cwd = get_cwd()?;
 
@@ -370,6 +439,7 @@ pub fn run() {
             cwd,
             cmd_cd,
             cmd_ls,
+            cmd_cat,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

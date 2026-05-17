@@ -1,25 +1,24 @@
 const { invoke } = window.__TAURI__.core;
 const { listen, emit } = window.__TAURI__.event;
 import {
+  DEBUG,
   MODE_FIRST,
   MODE_HAS_LIST_FILES,
+  MODE_DONE_CD,
+  MODE_DONE_CAT,
 } from './consts.js'
 import i18n from './i18n.js'
+import {Command, CommandLine, CommandResult} from './command.js'
+import {Path} from './path.js'
+import {showError, fixSpeakText} from './utils.js'
 import * as nue from './nue/nue.js'
-
-function showError (s) {
-  alert(s)
-}
-
-function fixSpeakText (text) {
-  return text.replace(/\./g, 'ドット') 
-}
 
 class MainModel {
   constructor () {
     this.refShellMode = nue.ref(MODE_FIRST)
     this.refCwd = nue.ref(null)
     this.refFiles = nue.ref([])
+    this.refText = nue.ref('')
     this.refProcStep = nue.ref(0)
   }
 }
@@ -110,219 +109,20 @@ class ShellRow extends nue.Div {
   }
 }
 
-function isAlpha (c) {
-  return /[a-zA-Z]/.test(c)
-}
-
-function isIdentHead (c) {
-  return /[a-zA-Z_]/.test(c)
-}
-
-function isIdent (c) {
-  return /[a-zA-Z0-9_]/.test(c)
-}
-
-class Path {
-  constructor (path) {
-    this.path = path
-  }
-
-  parent () {
-    let toks = this.parse(this.path)
-    if (toks.length) {
-      toks.pop()
-    }
-    return this.join(toks)
-  }
-
-  parse (path) {
-    path = path.replace('\\', '/')
-    return path.split('/')
-  }
-
-  join (toks) {
-    return toks.join('\\')
-  }
-}
-
-class CommandResult {
-  constructor () {
-    this.cmdName = null
-    this.cwd = null
-    this.files = []
-    this.exitStatus = 0
-  }
-}
-
-class Command {
-  constructor (model) {
-    this.model = model
-    this.name = ''
-    this.args = []
-  }
-
-  async exec (result=null /* CommandResult */) {
-    switch (this.name) {
-    case 'cat': return await this.execCat(result); break
-    case 'cd': return await this.execCd(result); break
-    case 'ls': return await this.execLs(result); break
-    }
-  }
-
-  async execCat (result) {
-
-  }
-
-  async execLs (result) {
-    let ret = new CommandResult()
-    let arg = this.args.length ? this.args[0] : null
-
-    try {
-      ret.files = await invoke('cmd_ls', {
-        arg,
-      })
-    } catch (e) {
-      console.error(e)
-      showError(e)
-      result.exitStatus = 1
-      return result
-    }
-
-    ret.cmdName = 'ls'
-    ret.exitStatus = 0
-    return ret
-  }
-
-  async execCd (result) {
-    let ret = new CommandResult()
-    let arg = this.args.length ? this.args[0] : null
-    let path
-    let cwd
-
-    try {
-      cwd = await invoke('cmd_cd', {
-        arg,
-      })
-    } catch (e) {
-      console.error(e)
-      ret.exitStatus = 1
-      return ret
-    }
-
-    ret.cmdName = 'cd'
-    ret.cwd = cwd
-    ret.exitStatus = 0
-    return ret
-  }
-}
-
-class CommandLine {
-  constructor (model) {
-    this.model = model
-    this.commands = []
-  }
-
-  async exec () {
-    let result = new CommandResult()
-    let prevCmd
-
-    for (let i = 0; i < this.commands.length; i++) {
-      let cmd = this.commands[i]
-      if (cmd.name === '|' || cmd.name === '&&') {
-        prevCmd = cmd
-        continue
-      }
-      if (prevCmd && prevCmd.name === '|') {
-        result = await cmd.exec(result)
-      } else if (prevCmd && prevCmd.name === '&&') {
-        if (result.exitStatus !== 0) {
-          break
-        }
-        result = await cmd.exec()
-      } else {
-        result = await cmd.exec()
-      }
-      prevCmd = cmd
-    }
-
-    return result
-  }
-
-  parse (s) {
-    let m = 0
-    let buf = ''
-    let cmd = null
-    s = s.trim()
-
-    for (let i = 0; i < s.length; i++) {
-      let c = s[i]
-      switch (m) {
-      case 0:
-        if (isIdentHead(c)) {
-          buf += c
-          m = 10
-        }
-        break
-      case 10:
-        if (c === ' ') {
-          cmd = new Command(this.model)
-          cmd.name = buf
-          buf = ''
-          m = 20
-        } else {
-          buf += c
-        }
-        break
-      case 20:
-        if (c === ' ') {
-          cmd.args.push(buf)
-          buf = ''
-        } else if (c === '&') {
-          if (i+1 < s.length) {
-            let c2 = s[i+1]
-            i++
-            if (c2 === '&') {
-              this.commands.push(cmd)
-              cmd = new Command(this.model)
-              cmd.name = '&&'
-              this.commands.push(cmd)
-              m = 0
-            }
-          } 
-        } else if (c === '|') {
-          this.commands.push(cmd)
-          cmd = new Command(this.model)
-          cmd.name = '|'
-          this.commands.push(cmd)
-          m = 0
-        } else {
-          buf += c
-        }
-        break
-      }
-    }
-
-    if (buf.length) {
-      if (m === 10) {
-        cmd = new Command(this.model)
-        cmd.name = buf
-        this.commands.push(cmd)
-      } else if (m === 20) {
-        cmd.args.push(buf)
-        this.commands.push(cmd)
-      }
-    }
-
-    return this.commands
-  }
-}
-
 class Shell extends nue.Div {
   constructor (model) {
     super()
     this.model = model
 
-    this.add(new ShellRow(this.model))
+    let row = new ShellRow(this.model)
+    this.add(row)
+    setTimeout(() => {
+      row.focus()
+    }, 1000)
+  }
+
+  focus () {
+    this.children[this.children.length-1].focus()
   }
 
   setFirstLabelCwd (cwd) {
@@ -348,8 +148,10 @@ class Shell extends nue.Div {
     
     let result = await cmdLine.exec()
     
-    if (result.cwd) {
+    if (result.cmdName === 'cd' && result.cwd) {
       newCwd = result.cwd
+      this.model.refCwd.value = newCwd
+      this.model.refShellMode.value = MODE_DONE_CD
     }
 
     tailRow.flozen()
@@ -361,11 +163,23 @@ class Shell extends nue.Div {
       this.add(p)
       this.model.refFiles.value = result.files
       this.model.refShellMode.value = MODE_HAS_LIST_FILES
+    } else if (result.cmdName === 'cat' && result.text) {
+      this.model.refText.value = result.text
+      this.model.refShellMode.value = MODE_DONE_CAT      
+      for (let line of result.text.replace('\r\n', '\n').split('\n')) {
+        let p = new nue.P()
+        p.setText(line)
+        this.add(p)
+      }
     }
 
     newRow.setLabelCwd(newCwd)
     this.add(newRow) 
     newRow.focus()
+
+    if (result.exitStatus !== 0) {
+      await this.emit('speak', i18n.failedCommandExec(result.error))
+    }
   }
 }
 
@@ -378,14 +192,49 @@ class Root extends nue.Root {
     this.add(this.shell)
 
     window.addEventListener('keydown', this.onWindowKeydown.bind(this))
+    window.addEventListener('focus', this.onWindowFocus.bind(this))
+    window.addEventListener('blur', this.onWindowBlur.bind(this))
+    this.model.refShellMode.onSet(this.onChangeShellMode.bind(this))
+  }
 
-    this.model.refShellMode.onSet(async (old, mode) => {
-      switch (mode) {
-      case MODE_HAS_LIST_FILES:
-        await this.speak(i18n.speakHasListFiles())
-        break
-      }
-    })
+  async onChangeShellMode (old, mode) {
+    switch (mode) {
+    case MODE_HAS_LIST_FILES:
+      await this.speak(i18n.speakHasListFiles())
+      break
+    case MODE_DONE_CD: {
+      let cwd = fixSpeakText(this.model.refCwd.value)
+      cwd = cwd.split('').join(' ')
+      await this.speak(i18n.doneCd(cwd))
+    } break
+    case MODE_DONE_CAT:
+      await this.speak(i18n.doneCat()) 
+      break
+    }
+  }
+
+  async onWindowFocus () {
+    if (DEBUG) {
+      return
+    }
+    try {
+      await this.speak(i18n.focusedWindow())
+    } catch (e) {
+      console.error(e)
+      return 
+    }
+  }
+
+  async onWindowBlur () {
+    if (DEBUG) {
+      return
+    }
+    try {
+      await this.speak(i18n.bluredWindow())
+    } catch (e) {
+      console.error(e)
+      return 
+    }    
   }
 
   async speakListFiles () {
@@ -411,11 +260,28 @@ class Root extends nue.Root {
     }
   }
 
+  async speakText () {
+    let text = fixSpeakText(this.model.refText.value)
+
+    try {
+      await this.speak(text)
+    } catch (e) {
+      console.error(e)
+      return
+    }
+  }
+
   async onWindowKeydown (ev) {
     switch (ev.code) {
     case 'KeyC':
       if (ev.ctrlKey) {
         this.model.refProcStep.value += 1
+      }
+      break
+    case 'KeyI':
+      if (ev.ctrlKey) {
+        this.shell.focus()
+        await this.speak(i18n.focusedCmdLineInput())
       }
       break
     case 'Escape':
@@ -426,8 +292,19 @@ class Root extends nue.Root {
     switch (this.model.refShellMode.value) {
     case MODE_HAS_LIST_FILES:
       switch (ev.code) {
-      case 'F2':
-        await this.speakListFiles()
+      case 'KeyQ':
+        if (ev.ctrlKey) {
+          await this.speakListFiles()
+        }
+        break
+      }
+      break
+    case MODE_DONE_CAT:
+      switch (ev.code) {
+      case 'KeyQ':
+        if (ev.ctrlKey) {
+          await this.speakText()
+        }
         break
       }
       break
@@ -458,6 +335,7 @@ class Root extends nue.Root {
     case 'keydownShellInput': {
       await this.speak(fixSpeakText(val.key))
     } break
+    case 'speak': await this.speak(val); break
     }
   }
 
