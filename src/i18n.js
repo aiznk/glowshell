@@ -13,8 +13,12 @@ export default new class I18N {
 		}
 	}
 
-	speakHasListFiles () {
-		return this.get('ファイルを複数取得しました。読み上げる場合は、Control Q、をタイプしてください。', '')
+	speakHasListFiles (files) {
+		if (files.length) {
+			return this.get('ファイルを複数取得しました。読み上げる場合は、Control Q、をタイプしてください。', '')
+		} else {
+			return this.get('ファイルリストはカラでした。', '')
+		}
 	}
 
 	speakStartListFiles () {
@@ -68,5 +72,61 @@ export default new class I18N {
 	commandHelp () {
 		let cmds = COMMAND_NAMES.join('、').split('').join(' ')
 		return this.get(`使用できるコマンドは、${cmds}です。各コマンドの解説は、コマンド入力欄に、ヘルプ、コマンドめい、と英字でタイプしてください。`)
+	}
+
+	helpLs () {
+		return this.get('エルエスコマンドは、現在のフォルダ内のファイルを一覧します。', '')
+	}
+
+	helpCd () {
+		return this.get('シーディーコマンドは、引数のパスに現在のフォルダを移動します。', '')
+	}
+
+	helpCat () {
+		return this.get('カットコマンドは、引数のファイルの内容を表示します。', '')
+	}
+
+	helpLcat () {
+		return this.get('エルカットコマンドは、エルエスコマンドで取得したファイルを番号で参照します。', '')
+	}
+
+	helpRm () {
+		return this.get('アールエムコマンドは、引数のファイルをゴミ箱に移動します。', '')
+	}
+
+	helpTouch () {
+		return this.get('タッチコマンドは、カラファイルを作成します。', '')
+	}
+
+	helpMkdir () {
+		return this.get('エムケーディレコマンドは、フォルダを作成します。', '')
+	}
+
+	unknownCmdName () {
+		return this.get('不明なコマンドめいです。', '')
+	}
+
+	invalidArgs () {
+		return this.get('不正な引数です。', '')
+	}
+
+	doneMkdir () {
+		return this.get('フォルダを作成しました。')
+	}
+
+	doneTouch () {
+		return this.get('カラファイルを作成しました。')
+	}
+
+	doneRm () {
+		return this.get('ファイルをゴミ箱に移動しました。')
+	}
+
+	textIsEmpty () {
+		return this.get('テキストはカラです。')
+	}
+
+	filesIsEmpty () {
+		return this.get('ファイルリストはカラです。')
 	}
 }

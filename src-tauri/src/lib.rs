@@ -104,9 +104,11 @@ async fn do_speak(app: AppHandle, text: &str) -> Result<()> {
     let tx2 = Arc::clone(&tx);
 
     app.listen("stop_speak", move |_event| {
+        println!("stop_speak");
         // stop_speakがemitされたらtokioのchannelに送信して処理を停止。
         if let Some(tx1) = tx1.lock().unwrap().take() {
             let _ = tx1.send(());
+            println!("stop_speak done");;
         }
     });
 
@@ -185,6 +187,181 @@ fn get_cwd() -> StdResult<PathBuf, Error> {
         cwd = get_exe_dir()?;
     }
     Ok(cwd)
+}
+
+#[tauri::command]
+async fn cmd_mkdir(
+    args: Option<Vec<String>>,
+) -> StdResult<(), Error> {
+    let cwd = get_cwd()?;
+
+    let args = match args {
+        Some(v) => v,
+        None => {
+            return err_runtime!("missing directory name");
+        }
+    };
+
+    if args.is_empty() {
+        return err_runtime!("missing directory name");
+    }
+
+    let mut recursive = false;
+    let mut targets: Vec<String> = Vec::new();
+
+    // オプション解析
+    for arg in args {
+        if arg == "-p" {
+            recursive = true;
+        } else {
+            targets.push(arg);
+        }
+    }
+
+    if targets.is_empty() {
+        return err_runtime!("missing directory name");
+    }
+
+    for target in targets {
+        let path = PathBuf::from(&target);
+
+        let target_path = if path.is_absolute() {
+            path
+        } else {
+            cwd.join(path)
+        };
+
+        // 既にファイルならエラー
+        if target_path.exists() && !target_path.is_dir() {
+            return err_runtime!(
+                "file exists: {}",
+                target_path.to_string_lossy()
+            );
+        }
+
+        let result = if recursive {
+            fs::create_dir_all(&target_path)
+        } else {
+            fs::create_dir(&target_path)
+        };
+
+        match result {
+            Ok(_) => {}
+
+            Err(_) => {
+                return err_file_io!(
+                    "failed to create directory: {}",
+                    target_path.to_string_lossy()
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn cmd_touch(
+    args: Option<Vec<String>>,
+) -> StdResult<(), Error> {
+    let cwd = get_cwd()?;
+
+    let args = match args {
+        Some(v) => v,
+        None => {
+            return err_runtime!("missing file path");
+        }
+    };
+
+    if args.is_empty() {
+        return err_runtime!("missing file path");
+    }
+
+    for arg in args {
+        let path = PathBuf::from(&arg);
+
+        let target_path = if path.is_absolute() {
+            path
+        } else {
+            cwd.join(path)
+        };
+
+        // ディレクトリならエラー
+        if target_path.exists() && target_path.is_dir() {
+            return err_runtime!(
+                "is a directory: {}",
+                target_path.to_string_lossy()
+            );
+        }
+
+        // 空ファイル作成
+        match fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&target_path)
+        {
+            Ok(_) => {}
+
+            Err(_) => {
+                return err_file_io!(
+                    "failed to create file: {}",
+                    target_path.to_string_lossy()
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn cmd_rm(
+    args: Option<Vec<String>>,
+) -> StdResult<(), Error> {
+    let cwd = get_cwd()?;
+
+    let args = match args {
+        Some(v) => v,
+        None => {
+            return err_runtime!("missing file path");
+        }
+    };
+
+    if args.is_empty() {
+        return err_runtime!("missing file path");
+    }
+
+    for arg in args {
+        let path = PathBuf::from(&arg);
+
+        let target_path = if path.is_absolute() {
+            path
+        } else {
+            cwd.join(path)
+        };
+
+        // 存在確認
+        if !target_path.exists() {
+            return err_runtime!(
+                "file not found: {}",
+                target_path.to_string_lossy()
+            );
+        }
+
+        // ゴミ箱へ移動
+        match trash::delete(&target_path) {
+            Ok(_) => {}
+
+            Err(_) => {
+                return err_file_io!(
+                    "failed to move to trash: {}",
+                    target_path.to_string_lossy()
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -442,6 +619,9 @@ pub fn run() {
             cmd_cd,
             cmd_ls,
             cmd_cat,
+            cmd_rm,
+            cmd_touch,
+            cmd_mkdir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

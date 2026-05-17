@@ -2,6 +2,10 @@ const { invoke } = window.__TAURI__.core;
 import {
   isIdent, isIdentHead,
 } from './utils.js'
+import {
+  MODE_HELP,
+} from './consts.js'
+import i18n from './i18n.js'
 
 export class CommandResult {
   constructor () {
@@ -23,10 +27,120 @@ export class Command {
 
   async exec (result=null /* CommandResult */) {
     switch (this.name) {
+    case 'help': return await this.execHelp(result); break
     case 'cat': return await this.execCat(result); break
     case 'lcat': return await this.execLcat(result); break
     case 'cd': return await this.execCd(result); break
     case 'ls': return await this.execLs(result); break
+    case 'touch': return await this.execTouch(result); break
+    case 'rm': return await this.execRm(result); break
+    case 'mkdir': return await this.execMkdir(result); break
+    }
+  }
+
+  async execMkdir (_) {
+    let ret = new CommandResult()
+    ret.cmdName = 'mkdir'
+
+    if (!this.args.length) {
+      ret.exitStatus = 1
+      ret.error = i18n.invalidArgs()
+      return ret      
+    }
+
+    try {
+      await invoke('cmd_mkdir', {
+        args: this.args,
+      })
+    } catch (e) {
+      ret.exitStatus = 1
+      ret.error = e
+      return ret
+    }
+
+    return ret
+  }
+
+  async execTouch (_) {
+    let ret = new CommandResult()
+    ret.cmdName = 'touch'
+
+    if (!this.args.length) {
+      ret.exitStatus = 1
+      ret.error = i18n.invalidArgs()
+      return ret      
+    }
+
+    try {
+      await invoke('cmd_touch', {
+        args: this.args,
+      })
+    } catch (e) {
+      ret.exitStatus = 1
+      ret.error = e
+      return ret
+    }
+
+    return ret
+  }
+
+  async execRm (_) {
+    let ret = new CommandResult()
+    ret.cmdName = 'rm'
+
+    if (!this.args.length) {
+      ret.exitStatus = 1
+      ret.error = i18n.invalidArgs()
+      return ret
+    }
+
+    try {
+      await invoke('cmd_rm', {
+        args: this.args,
+      })
+    } catch (e) {
+      ret.exitStatus = 1
+      ret.error = e
+      return ret
+    }
+
+    return ret
+  }
+
+  async unsyncSpeak (result /* CommandResult */, text) {
+    try {
+      /* await */ invoke('speak', { text })
+    } catch (e) {
+      console.error(e)
+      result.exitStatus = 1
+      result.error = e
+      return result
+    }      
+    return result
+  }
+
+  async execHelp (_) {
+    let ret = new CommandResult()
+    ret.cmdName = 'help'
+    ret.exitStatus = 0
+
+    if (!this.args.length) {
+      ret = await this.unsyncSpeak(ret, i18n.helpDesc())
+      this.model.refShellMode.value = MODE_HELP
+      return ret
+    }
+
+    let cmdName = this.args[0]
+
+    switch (cmdName) {
+    case 'ls': return this.unsyncSpeak(ret, i18n.helpLs()); break
+    case 'cd': return this.unsyncSpeak(ret, i18n.helpCd()); break
+    case 'cat': return this.unsyncSpeak(ret, i18n.helpCat()); break
+    case 'lcat': return this.unsyncSpeak(ret, i18n.helpLcat()); break
+    case 'rm': return this.unsyncSpeak(ret, i18n.helpRm()); break
+    case 'touch': return this.unsyncSpeak(ret, i18n.helpTouch()); break
+    case 'mkdir': return this.unsyncSpeak(ret, i18n.helpMkdir()); break
+    default: return this.unsyncSpeak(ret, i18n.unknownCmdName()); break
     }
   }
 

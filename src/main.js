@@ -161,7 +161,7 @@ class Shell extends nue.Div {
 
     tailRow.flozen()
 
-    if (result.files.length) {
+    if (result.cmdName === 'ls') {
       let text = result.files.join(' ')
       let p = new nue.P()
       p.setText(text)
@@ -185,8 +185,17 @@ class Shell extends nue.Div {
     this.add(newRow) 
     newRow.focus()
 
-    if (result.exitStatus !== 0) {
+    switch (result.exitStatus) {
+    case 0:
+      switch (result.cmdName) {
+      case 'mkdir': await this.emit('speak', i18n.doneMkdir()); break
+      case 'touch': await this.emit('speak', i18n.doneTouch()); break
+      case 'rm': await this.emit('speak', i18n.doneRm()); break
+      }
+      break
+    default:
       await this.emit('speak', i18n.failedCommandExec(result.error))
+      break
     }
   }
 }
@@ -208,7 +217,7 @@ class Root extends nue.Root {
   async onChangeShellMode (old, mode) {
     switch (mode) {
     case MODE_HAS_LIST_FILES:
-      await this.speak(i18n.speakHasListFiles())
+      await this.speak(i18n.speakHasListFiles(this.model.refFiles.value))
       break
     case MODE_DONE_CD: {
       let cwd = fixSpeakText(this.model.refCwd.value)
@@ -249,6 +258,11 @@ class Root extends nue.Root {
     let files = this.model.refFiles.value
     let step = this.model.refProcStep.value
 
+    if (!files.length) {
+      await this.speak(i18n.filesIsEmpty())
+      return
+    }
+
     await this.speak(i18n.speakStartListFiles())
 
     for (let i = 0; i < files.length; i++) {
@@ -269,7 +283,9 @@ class Root extends nue.Root {
   }
 
   async speakText () {
-    let text = fixSpeakText(this.model.refText.value)
+    let text = fixSpeakText(this.model.refText.value).trim()
+    text = text.length ? text : i18n.textIsEmpty()
+    console.log(`[${text}]`)
 
     try {
       await this.speak(text)
@@ -375,7 +391,7 @@ class Root extends nue.Root {
   }
 
   async onDoneSpeak (ev) {
-    console.log(ev)
+    // console.log(ev)
   }
 }
 
