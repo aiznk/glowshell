@@ -1,15 +1,26 @@
 const { invoke } = window.__TAURI__.core;
 const { listen, emit } = window.__TAURI__.event;
+import {
+  MODE_FIRST,
+  MODE_HAS_LIST_FILES,
+} from './consts.js'
+import i18n from './i18n.js'
 import * as nue from './nue/nue.js'
 
 function showError (s) {
   alert(s)
 }
 
+function fixSpeakText (text) {
+  return text.replace(/\./g, 'ドット') 
+}
+
 class MainModel {
   constructor () {
+    this.refShellMode = nue.ref(MODE_FIRST)
     this.refCwd = nue.ref(null)
-    this.refCwdFiles = nue.ref([])
+    this.refFiles = nue.ref([])
+    this.refProcStep = nue.ref(0)
   }
 }
 
@@ -136,7 +147,9 @@ class Path {
 
 class CommandResult {
   constructor () {
+    this.cmdName = null
     this.cwd = null
+    this.files = []
     this.exitStatus = 0
   }
 }
@@ -152,11 +165,32 @@ class Command {
     switch (this.name) {
     case 'cat': return await this.execCat(result); break
     case 'cd': return await this.execCd(result); break
+    case 'ls': return await this.execLs(result); break
     }
   }
 
   async execCat (result) {
 
+  }
+
+  async execLs (result) {
+    let ret = new CommandResult()
+    let arg = this.args.length ? this.args[0] : null
+
+    try {
+      ret.files = await invoke('cmd_ls', {
+        arg,
+      })
+    } catch (e) {
+      console.error(e)
+      showError(e)
+      result.exitStatus = 1
+      return result
+    }
+
+    ret.cmdName = 'ls'
+    ret.exitStatus = 0
+    return ret
   }
 
   async execCd (result) {
@@ -175,6 +209,7 @@ class Command {
       return ret
     }
 
+    ret.cmdName = 'cd'
     ret.cwd = cwd
     ret.exitStatus = 0
     return ret
@@ -310,12 +345,24 @@ class Shell extends nue.Div {
 
     let cmdLine = new CommandLine(this.model)
     cmdLine.parse(sCmdLine)
+    
     let result = await cmdLine.exec()
+    
     if (result.cwd) {
       newCwd = result.cwd
     }
 
     tailRow.flozen()
+
+    if (result.files.length) {
+      let text = result.files.join(' ')
+      let p = new nue.P()
+      p.setText(text)
+      this.add(p)
+      this.model.refFiles.value = result.files
+      this.model.refShellMode.value = MODE_HAS_LIST_FILES
+    }
+
     newRow.setLabelCwd(newCwd)
     this.add(newRow) 
     newRow.focus()
@@ -329,12 +376,71 @@ class Root extends nue.Root {
     
     this.shell = new Shell(this.model)
     this.add(this.shell)
+
+    window.addEventListener('keydown', this.onWindowKeydown.bind(this))
+
+    this.model.refShellMode.onSet(async (old, mode) => {
+      switch (mode) {
+      case MODE_HAS_LIST_FILES:
+        await this.speak(i18n.speakHasListFiles())
+        break
+      }
+    })
+  }
+
+  async speakListFiles () {
+    let files = this.model.refFiles.value
+    let step = this.model.refProcStep.value
+
+    await this.speak(i18n.speakStartListFiles())
+
+    for (let i = 0; i < files.length; i++) {
+      await this.speak(i18n.speakFileNumber(i))
+
+      let file = files[i]
+      file = fixSpeakText(file)
+
+      // 2026-05-17: 英単語の読み上げが微妙だったので文字を1つずつ
+      // 発音させるようにしている。
+      file = file.split('').join(' ')
+
+      await this.speak(file)
+      if (step !== this.model.refProcStep.value) {
+        break
+      }
+    }
+  }
+
+  async onWindowKeydown (ev) {
+    switch (ev.code) {
+    case 'KeyC':
+      if (ev.ctrlKey) {
+        this.model.refProcStep.value += 1
+      }
+      break
+    case 'Escape':
+      await this.stopSpeak()
+      break
+    }
+
+    switch (this.model.refShellMode.value) {
+    case MODE_HAS_LIST_FILES:
+      switch (ev.code) {
+      case 'F2':
+        await this.speakListFiles()
+        break
+      }
+      break
+    }
   }
 
   async setup () {
     await listen('done_speak', this.onDoneSpeak.bind(this))
     await this.getCwd()
-    await this.listCwd()
+  }
+
+  async stopSpeak () {
+    await emit('stop_speak')
   }
 
   async speak (text) {
@@ -349,9 +455,9 @@ class Root extends nue.Root {
 
   async receive (key, val) {
     switch (key) {
-    case 'keydownShellInput':
-      await this.speak(val.key)
-      break
+    case 'keydownShellInput': {
+      await this.speak(fixSpeakText(val.key))
+    } break
     }
   }
 
@@ -364,15 +470,6 @@ class Root extends nue.Root {
     }
 
     this.shell.setFirstLabelCwd(this.model.refCwd.value)
-  }
-
-  async listCwd () {
-    try {
-      this.model.refCwdFiles.value = await invoke('list_cwd')
-    } catch (e) {
-      console.error(e)
-      return showError(e)
-    } 
   }
 
   async onDoneSpeak (ev) {

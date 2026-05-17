@@ -1,0 +1,2 @@
+export const MODE_FIRST = 'MODE_FIRST'
+export const MODE_HAS_LIST_FILES = 'MODE_HAS_LIST_FILES'

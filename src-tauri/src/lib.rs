@@ -186,6 +186,87 @@ fn get_cwd() -> StdResult<PathBuf, Error> {
 }
 
 #[tauri::command]
+async fn cmd_ls(arg: Option<String>) -> StdResult<Vec<String>, Error> {
+    let cwd = get_cwd()?;
+
+    // 対象パス
+    let target_path = match arg {
+        Some(v) => {
+            let path = PathBuf::from(v);
+
+            if path.is_absolute() {
+                path
+            } else {
+                cwd.join(path)
+            }
+        }
+
+        None => cwd,
+    };
+
+    // 正規化
+    let target_path = match target_path.canonicalize() {
+        Ok(v) => v,
+        Err(_) => {
+            return err_runtime!(
+                "directory not found: {}",
+                target_path.to_string_lossy()
+            );
+        }
+    };
+
+    // ディレクトリ確認
+    if !target_path.is_dir() {
+        return err_runtime!(
+            "not a directory: {}",
+            target_path.to_string_lossy()
+        );
+    }
+
+    // 読み込み
+    let entries = match fs::read_dir(&target_path) {
+        Ok(v) => v,
+        Err(_) => {
+            return err_file_io!(
+                "failed to read directory: {}",
+                target_path.to_string_lossy()
+            );
+        }
+    };
+
+    let mut result: Vec<String> = Vec::new();
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(v) => v,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        let path = entry.path();
+
+        let mut name = match path.file_name() {
+            Some(v) => v.to_string_lossy().to_string(),
+            None => {
+                continue;
+            }
+        };
+
+        // ディレクトリなら末尾に /
+        if path.is_dir() {
+            name.push('/');
+        }
+
+        result.push(name);
+    }
+
+    result.sort();
+
+    Ok(result)
+}
+
+#[tauri::command]
 async fn cmd_cd(arg: Option<String>) -> StdResult<String, Error> {
     let config_path = get_config_path()?;
     let mut config = load_config(&config_path)?;
@@ -288,6 +369,7 @@ pub fn run() {
             list_cwd,
             cwd,
             cmd_cd,
+            cmd_ls,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
