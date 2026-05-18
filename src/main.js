@@ -179,6 +179,10 @@ class Shell extends nue.Div {
         p.setText(line)
         this.add(p)
       }
+    } else if (result.cmdName === 'pwd') {
+      let p = new nue.P()
+      p.setText(result.text.trim())
+      this.add(p)
     }
 
     newRow.setLabelCwd(newCwd)
