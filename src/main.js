@@ -217,92 +217,64 @@ class EditorPage extends nue.Div {
   constructor (model, fname) {
     super({
       class: 'editor-page',
-      tabindex: 0,
-    }, {
-      events: ['keydown'],
     })
 
     this.model = model
     this.fname = fname
 
     this.buffer = new EditorBuffer()
-    this.buffer.path = fname
 
-    this.textLayer = new nue.Pre({
-      class: 'editor-page__text',
+    this.renderLayer = new nue.Pre({
+      class: 'editor-render',
     })
 
-    this.status = new nue.Div({
-      class: 'editor-page__status',
+    this.statusBar = new nue.Div({
+      class: 'editor-status',
     })
 
-    this.add(this.textLayer)
-    this.add(this.status)
+    this.input =
+      new EditorHiddenInput()
+
+    this.add(this.renderLayer)
+    this.add(this.statusBar)
+    this.add(this.input)
 
     this.render()
-  }
-
-  async onKeydown (ev) {
-    ev.preventDefault()
-    ev.stopPropagation()
-
-    console.log(ev.key)
-    alert('1')
   }
 
   focus () {
-    this.elem.focus()
-    alert('2')
+    this.input.focus()
   }
 
-  render () {
-    let out = []
+  async receive (key, val) {
+    switch (key) {
+    case 'editorKeydown':
+      await this.onEditorKeydown(val)
+      break
 
-    for (let y = 0; y < this.buffer.lines.length; y++) {
-      let line = this.buffer.lines[y]
-
-      if (y === this.buffer.cursorY) {
-        let x = this.buffer.cursorX
-
-        let left = line.slice(0, x)
-        let cur = line[x] || ' '
-        let right = line.slice(x + 1)
-
-        line =
-          left +
-          '[' + cur + ']' +
-          right
-      }
-
-      out.push(line)
+    case 'editorInput':
+      await this.onEditorInput(val)
+      break
     }
-
-    this.textLayer.setText(out.join('\n'))
-
-    this.status.setText(
-      `${this.buffer.mode}  ${this.fname}  ${this.buffer.cursorY + 1}:${this.buffer.cursorX + 1}`
-    )
   }
 
-  async onKeydown (ev) {
+  async onEditorKeydown (ev) {
     switch (this.buffer.mode) {
     case 'NORMAL':
-      await this.onKeydownNormal(ev)
+      await this.onNormalKeydown(ev)
       break
 
     case 'INSERT':
-      await this.onKeydownInsert(ev)
-      break
-
-    case 'COMMAND':
-      await this.onKeydownCommand(ev)
+      await this.onInsertKeydown(ev)
       break
     }
 
     this.render()
   }
 
-  async onKeydownNormal (ev) {
+  async onNormalKeydown (ev) {
+    ev.preventDefault()
+
     switch (ev.key) {
     case 'h':
       this.moveCursor(-1, 0)
@@ -322,97 +294,144 @@ class EditorPage extends nue.Div {
 
     case 'i':
       this.buffer.mode = 'INSERT'
+
+      this.input.setValue('')
       break
 
     case 'x':
       this.deleteChar()
       break
-
-    case ':':
-      this.buffer.mode = 'COMMAND'
-      this.buffer.command = ''
-      break
-
-    case 'o':
-      this.openBelow()
-      this.buffer.mode = 'INSERT'
-      break
     }
   }
 
-  async onKeydownInsert (ev) {
+  async onInsertKeydown (ev) {
     switch (ev.key) {
     case 'Escape':
+      ev.preventDefault()
+
       this.buffer.mode = 'NORMAL'
+
+      this.input.setValue('')
+
       return
 
     case 'Backspace':
+      ev.preventDefault()
+
       this.backspace()
+
+      this.input.setValue('')
+
       return
 
     case 'Enter':
-      this.insertNewline()
-      return
-    }
+      ev.preventDefault()
 
-    if (ev.key.length === 1) {
-      this.insertChar(ev.key)
+      this.insertNewline()
+
+      this.input.setValue('')
+
+      return
     }
   }
 
-  async onKeydownCommand (ev) {
-    switch (ev.key) {
-    case 'Escape':
-      this.buffer.mode = 'NORMAL'
-      return
-
-    case 'Enter':
-      await this.execCommand(this.buffer.command)
-      this.buffer.mode = 'NORMAL'
-      return
-
-    case 'Backspace':
-      this.buffer.command =
-        this.buffer.command.slice(0, -1)
+  async onEditorInput (text) {
+    if (
+      this.buffer.mode !== 'INSERT'
+    ) {
       return
     }
 
-    if (ev.key.length === 1) {
-      this.buffer.command += ev.key
+    if (!text.length) {
+      return
     }
+
+    for (let ch of text) {
+      this.insertChar(ch)
+    }
+
+    this.input.setValue('')
+
+    this.render()
+  }
+
+  render () {
+    let out = []
+
+    for (
+      let y = 0;
+      y < this.buffer.lines.length;
+      y++
+    ) {
+      let line =
+        this.buffer.lines[y]
+
+      if (y === this.buffer.cursorY) {
+        let x =
+          this.buffer.cursorX
+
+        let left =
+          line.slice(0, x)
+
+        let cur =
+          line[x] || ' '
+
+        let right =
+          line.slice(x + 1)
+
+        line =
+          left +
+          `<span class="cursor">${cur}</span>` +
+          right
+      }
+
+      out.push(line)
+    }
+
+    this.renderLayer.setHTML(
+      out.join('\n')
+    )
+
+    this.statusBar.setText(
+      `${this.buffer.mode} ${this.fname} ${this.buffer.cursorY+1}:${this.buffer.cursorX+1}`
+    )
   }
 
   moveCursor (dx, dy) {
     this.buffer.cursorY += dy
 
-    if (this.buffer.cursorY < 0) {
-      this.buffer.cursorY = 0
-    }
-
-    if (this.buffer.cursorY >= this.buffer.lines.length) {
-      this.buffer.cursorY =
-        this.buffer.lines.length - 1
-    }
+    this.buffer.cursorY =
+      Math.max(
+        0,
+        Math.min(
+          this.buffer.cursorY,
+          this.buffer.lines.length - 1
+        )
+      )
 
     let line =
-      this.buffer.lines[this.buffer.cursorY]
+      this.buffer.lines[
+        this.buffer.cursorY
+      ]
 
     this.buffer.cursorX += dx
 
-    if (this.buffer.cursorX < 0) {
-      this.buffer.cursorX = 0
-    }
-
-    if (this.buffer.cursorX > line.length) {
-      this.buffer.cursorX = line.length
-    }
+    this.buffer.cursorX =
+      Math.max(
+        0,
+        Math.min(
+          this.buffer.cursorX,
+          line.length
+        )
+      )
   }
 
   insertChar (ch) {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
 
-    let line = this.buffer.lines[y]
+    let line =
+      this.buffer.lines[y]
 
     this.buffer.lines[y] =
       line.slice(0, x) +
@@ -426,7 +445,8 @@ class EditorPage extends nue.Div {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
 
-    let line = this.buffer.lines[y]
+    let line =
+      this.buffer.lines[y]
 
     if (x >= line.length) {
       return
@@ -445,7 +465,8 @@ class EditorPage extends nue.Div {
       return
     }
 
-    let line = this.buffer.lines[y]
+    let line =
+      this.buffer.lines[y]
 
     this.buffer.lines[y] =
       line.slice(0, x - 1) +
@@ -458,55 +479,25 @@ class EditorPage extends nue.Div {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
 
-    let line = this.buffer.lines[y]
+    let line =
+      this.buffer.lines[y]
 
-    let left = line.slice(0, x)
-    let right = line.slice(x)
+    let left =
+      line.slice(0, x)
+
+    let right =
+      line.slice(x)
 
     this.buffer.lines[y] = left
 
-    this.buffer.lines.splice(y + 1, 0, right)
+    this.buffer.lines.splice(
+      y + 1,
+      0,
+      right
+    )
 
     this.buffer.cursorY++
     this.buffer.cursorX = 0
-  }
-
-  openBelow () {
-    let y = this.buffer.cursorY
-
-    this.buffer.lines.splice(y + 1, 0, '')
-
-    this.buffer.cursorY++
-    this.buffer.cursorX = 0
-  }
-
-  async execCommand (cmd) {
-    switch (cmd) {
-    case 'q':
-      this.emit('quitEditor')
-      break
-
-    case 'w':
-      await this.save()
-      break
-
-    case 'wq':
-      await this.save()
-      this.emit('quitEditor')
-      break
-    }
-  }
-
-  async save () {
-    let text =
-      this.buffer.lines.join('\n')
-
-    await invoke('write_text_file', {
-      path: this.fname,
-      text,
-    })
-
-    this.buffer.modified = false
   }
 }
 
@@ -516,9 +507,36 @@ class EditorBuffer {
     this.cursorX = 0
     this.cursorY = 0
     this.mode = 'NORMAL'
-    this.command = ''
     this.path = null
-    this.modified = false
+  }
+}
+
+class EditorHiddenInput extends nue.Textarea {
+  constructor () {
+    super({
+      class: 'editor-hidden-input',
+    }, {
+      events: [
+        'keydown',
+        'input',
+        'blur',
+      ],
+    })
+  }
+
+  async onKeydown (ev) {
+    await this.emit('editorKeydown', ev)
+  }
+
+  async onInput (ev) {
+    await this.emit(
+      'editorInput',
+      this.getValue()
+    )
+  }
+
+  async onBlur () {
+    this.focus()
   }
 }
 
@@ -556,7 +574,7 @@ class Editor extends nue.Div {
       let tab =
         this.notebook.tabs.children[0]
 
-      tab.component.focus()
+      alert(tab.component.focus())
     }, 100)
   }
 
