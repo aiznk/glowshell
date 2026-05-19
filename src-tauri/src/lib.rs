@@ -190,6 +190,12 @@ fn get_cwd() -> StdResult<PathBuf, Error> {
 }
 
 #[tauri::command]
+async fn cmd_pwd() -> StdResult<String, Error> {
+    let cwd = get_cwd()?;
+    Ok(cwd.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 async fn cmd_mkdir(
     args: Option<Vec<String>>,
 ) -> StdResult<(), Error> {
@@ -622,6 +628,7 @@ pub fn run() {
             cmd_rm,
             cmd_touch,
             cmd_mkdir,
+            cmd_pwd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

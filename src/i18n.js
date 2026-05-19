@@ -122,6 +122,10 @@ export default new class I18N {
 		return this.get('ファイルをゴミ箱に移動しました。')
 	}
 
+	donePwd (pwd) {
+		return this.get(`現在の作業フォルダは、${pwd}、です。`)
+	}
+
 	textIsEmpty () {
 		return this.get('テキストはカラです。')
 	}

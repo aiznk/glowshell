@@ -1,6 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 import {
   isIdent, isIdentHead,
+  fixSpeakText,
 } from './utils.js'
 import {
   MODE_HELP,
@@ -15,6 +16,7 @@ export class CommandResult {
     this.text = null /* String */
     this.exitStatus = 0 /* i32 */
     this.error = null /* Error */
+    this.args = [] /* Vec */
   }
 }
 
@@ -35,7 +37,32 @@ export class Command {
     case 'touch': return await this.execTouch(result); break
     case 'rm': return await this.execRm(result); break
     case 'mkdir': return await this.execMkdir(result); break
+    case 'pwd': return await this.execPwd(result); break
+    case 'vi': return await this.execEditor(result); break
     }
+  }
+
+  async execEditor (_) {
+    let ret = new CommandResult()
+    ret.cmdName = 'vi'
+    ret.args = this.args
+    return ret
+  }
+
+  async execPwd (_) {
+    let ret = new CommandResult()
+    ret.cmdName = 'pwd'
+
+    try {
+      ret.text = await invoke('cmd_pwd')
+    } catch (e) {
+      ret.exitStatus = 1
+      ret.error = e
+      return ret
+    }
+
+    let pwd = fixSpeakText(ret.text.trim()).split('').join(' ')
+    return this.unsyncSpeak(ret, i18n.donePwd(pwd))
   }
 
   async execMkdir (_) {

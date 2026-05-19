@@ -7,6 +7,7 @@ import {
   MODE_DONE_CD,
   MODE_DONE_CAT,
   MODE_HELP,
+  MODE_EDITOR,
 } from './consts.js'
 import i18n from './i18n.js'
 import {Command, CommandLine, CommandResult} from './command.js'
@@ -21,6 +22,7 @@ class MainModel {
     this.refFiles = nue.ref([])
     this.refText = nue.ref('')
     this.refProcStep = nue.ref(0)
+    this.refEditorArgs = nue.ref([])
   }
 }
 
@@ -155,28 +157,43 @@ class Shell extends nue.Div {
     
     tailRow.flozen()
 
-    if (result.cmdName === 'cd' && result.cwd) {
-      newCwd = result.cwd
-      this.model.refCwd.value = newCwd
-      this.model.refShellMode.value = MODE_DONE_CD
-    } else if (result.cmdName === 'ls') {
+    switch (result.cmdName) {
+    case 'vi': {
+      this.model.refShellMode.value = MODE_EDITOR
+      this.model.refEditorArgs.value = result.args
+    } break
+    case 'cd': {
+      if (result.cwd) {
+        newCwd = result.cwd
+        this.model.refCwd.value = newCwd
+        this.model.refShellMode.value = MODE_DONE_CD
+      }
+    } break
+    case 'ls': {
       let text = result.files.join(' ')
       let p = new nue.P()
       p.setText(text)
       this.add(p)
       this.model.refFiles.value = result.files
       this.model.refShellMode.value = MODE_HAS_LIST_FILES
-    } else if (
-      (result.cmdName === 'cat' || result.cmdName === 'lcat') && 
-      result.text
-    ) {
-      this.model.refText.value = result.text
-      this.model.refShellMode.value = MODE_DONE_CAT      
-      for (let line of result.text.replace('\r\n', '\n').split('\n')) {
-        let p = new nue.P()
-        p.setText(line)
-        this.add(p)
+    } break
+    case 'cat':
+    case 'lcat': {
+      if (result.text) {
+        this.model.refText.value = result.text
+        this.model.refShellMode.value = MODE_DONE_CAT      
+        for (let line of result.text.replace('\r\n', '\n').split('\n')) {
+          let p = new nue.P()
+          p.setText(line)
+          this.add(p)
+        }
       }
+    } break
+    case 'pwd': {
+      let p = new nue.P()
+      p.setText(result.text.trim())
+      this.add(p)
+    } break
     }
 
     newRow.setLabelCwd(newCwd)
@@ -189,6 +206,389 @@ class Shell extends nue.Div {
   }
 }
 
+class EditorNotebook extends nue.Notebook {
+  constructor (model) {
+    super({ class: 'editor-notebook' })
+    this.model = model
+  }
+}
+
+class EditorPage extends nue.Div {
+  constructor (model, fname) {
+    super({
+      class: 'editor-page',
+    })
+
+    this.model = model
+    this.fname = fname
+
+    this.buffer = new EditorBuffer()
+
+    this.renderLayer = new nue.Pre({
+      class: 'editor-render',
+    })
+
+    this.statusBar = new nue.Div({
+      class: 'editor-status',
+    })
+
+    this.input =
+      new EditorHiddenInput()
+
+    this.add(this.renderLayer)
+    this.add(this.statusBar)
+    this.add(this.input)
+
+    this.render()
+  }
+
+  focus () {
+    this.input.focus()
+  }
+
+  async receive (key, val) {
+    switch (key) {
+    case 'editorKeydown':
+      await this.onEditorKeydown(val)
+      break
+
+    case 'editorInput':
+      await this.onEditorInput(val)
+      break
+    }
+  }
+
+  async onEditorKeydown (ev) {
+    switch (this.buffer.mode) {
+    case 'NORMAL':
+      await this.onNormalKeydown(ev)
+      break
+
+    case 'INSERT':
+      await this.onInsertKeydown(ev)
+      break
+    }
+
+    this.render()
+  }
+
+  async onNormalKeydown (ev) {
+    ev.preventDefault()
+
+    switch (ev.key) {
+    case 'h':
+      this.moveCursor(-1, 0)
+      break
+
+    case 'j':
+      this.moveCursor(0, 1)
+      break
+
+    case 'k':
+      this.moveCursor(0, -1)
+      break
+
+    case 'l':
+      this.moveCursor(1, 0)
+      break
+
+    case 'i':
+      this.buffer.mode = 'INSERT'
+
+      this.input.setValue('')
+      break
+
+    case 'x':
+      this.deleteChar()
+      break
+    }
+  }
+
+  async onInsertKeydown (ev) {
+    switch (ev.key) {
+    case 'Escape':
+      ev.preventDefault()
+
+      this.buffer.mode = 'NORMAL'
+
+      this.input.setValue('')
+
+      return
+
+    case 'Backspace':
+      ev.preventDefault()
+
+      this.backspace()
+
+      this.input.setValue('')
+
+      return
+
+    case 'Enter':
+      ev.preventDefault()
+
+      this.insertNewline()
+
+      this.input.setValue('')
+
+      return
+    }
+  }
+
+  async onEditorInput (text) {
+    if (
+      this.buffer.mode !== 'INSERT'
+    ) {
+      return
+    }
+
+    if (!text.length) {
+      return
+    }
+
+    for (let ch of text) {
+      this.insertChar(ch)
+    }
+
+    this.input.setValue('')
+
+    this.render()
+  }
+
+  render () {
+    let out = []
+
+    for (
+      let y = 0;
+      y < this.buffer.lines.length;
+      y++
+    ) {
+      let line =
+        this.buffer.lines[y]
+
+      if (y === this.buffer.cursorY) {
+        let x =
+          this.buffer.cursorX
+
+        let left =
+          line.slice(0, x)
+
+        let cur =
+          line[x] || ' '
+
+        let right =
+          line.slice(x + 1)
+
+        line =
+          left +
+          `<span class="cursor">${cur}</span>` +
+          right
+      }
+
+      out.push(line)
+    }
+
+    this.renderLayer.setHTML(
+      out.join('\n')
+    )
+
+    this.statusBar.setText(
+      `${this.buffer.mode} ${this.fname} ${this.buffer.cursorY+1}:${this.buffer.cursorX+1}`
+    )
+  }
+
+  moveCursor (dx, dy) {
+    this.buffer.cursorY += dy
+
+    this.buffer.cursorY =
+      Math.max(
+        0,
+        Math.min(
+          this.buffer.cursorY,
+          this.buffer.lines.length - 1
+        )
+      )
+
+    let line =
+      this.buffer.lines[
+        this.buffer.cursorY
+      ]
+
+    this.buffer.cursorX += dx
+
+    this.buffer.cursorX =
+      Math.max(
+        0,
+        Math.min(
+          this.buffer.cursorX,
+          line.length
+        )
+      )
+  }
+
+  insertChar (ch) {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+
+    let line =
+      this.buffer.lines[y]
+
+    this.buffer.lines[y] =
+      line.slice(0, x) +
+      ch +
+      line.slice(x)
+
+    this.buffer.cursorX++
+  }
+
+  deleteChar () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+
+    let line =
+      this.buffer.lines[y]
+
+    if (x >= line.length) {
+      return
+    }
+
+    this.buffer.lines[y] =
+      line.slice(0, x) +
+      line.slice(x + 1)
+  }
+
+  backspace () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+
+    if (x <= 0) {
+      return
+    }
+
+    let line =
+      this.buffer.lines[y]
+
+    this.buffer.lines[y] =
+      line.slice(0, x - 1) +
+      line.slice(x)
+
+    this.buffer.cursorX--
+  }
+
+  insertNewline () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+
+    let line =
+      this.buffer.lines[y]
+
+    let left =
+      line.slice(0, x)
+
+    let right =
+      line.slice(x)
+
+    this.buffer.lines[y] = left
+
+    this.buffer.lines.splice(
+      y + 1,
+      0,
+      right
+    )
+
+    this.buffer.cursorY++
+    this.buffer.cursorX = 0
+  }
+}
+
+class EditorBuffer {
+  constructor () {
+    this.lines = ['']
+    this.cursorX = 0
+    this.cursorY = 0
+    this.mode = 'NORMAL'
+    this.path = null
+  }
+}
+
+class EditorHiddenInput extends nue.Textarea {
+  constructor () {
+    super({
+      class: 'editor-hidden-input',
+    }, {
+      events: [
+        'keydown',
+        'input',
+        'blur',
+      ],
+    })
+  }
+
+  async onKeydown (ev) {
+    await this.emit('editorKeydown', ev)
+  }
+
+  async onInput (ev) {
+    await this.emit(
+      'editorInput',
+      this.getValue()
+    )
+  }
+
+  async onBlur () {
+    this.focus()
+  }
+}
+
+class Editor extends nue.Div {
+  constructor (model) {
+    super({ class: 'editor' })
+
+    this.model = model
+
+    this.notebook =
+      new EditorNotebook(this.model)
+
+    this.add(this.notebook)
+  }
+
+  setup (args) {
+    this.notebook.clear()
+
+    if (!args.length) {
+      args = ['empty']
+    }
+
+    for (let arg of args) {
+      let page = new EditorPage(this.model, arg)
+
+      let tab =
+        new nue.NotebookTab(arg, page)
+
+      this.notebook.addTab(tab)
+    }
+
+    this.notebook.click(0)
+
+    setTimeout(() => {
+      let tab =
+        this.notebook.tabs.children[0]
+
+      alert(tab.component.focus())
+    }, 100)
+  }
+
+  async receive (key, val) {
+    switch (key) {
+    case 'quitEditor':
+      this.hide()
+      this.model.refShellMode.value =
+        MODE_FIRST
+      break
+    }
+  }
+}
+
 class Root extends nue.Root {
   constructor () {
     super()
@@ -196,6 +596,10 @@ class Root extends nue.Root {
     
     this.shell = new Shell(this.model)
     this.add(this.shell)
+
+    this.editor = new Editor(this.model)
+    this.editor.hide()
+    this.add(this.editor)
 
     window.addEventListener('keydown', this.onWindowKeydown.bind(this))
     window.addEventListener('focus', this.onWindowFocus.bind(this))
@@ -205,12 +609,23 @@ class Root extends nue.Root {
 
   async onChangeShellMode (old, mode) {
     switch (mode) {
+    case MODE_EDITOR:
+      this.shell.hide()
+      this.editor.setup(this.model.refEditorArgs.value)
+      this.editor.show()
+      break
     case MODE_HAS_LIST_FILES:
       await this.speak(i18n.speakHasListFiles(this.model.refFiles.value))
       break
+<<<<<<< HEAD
     case MODE_DONE_CD:
       await this.speak(i18n.doneCd())
       break
+=======
+    case MODE_DONE_CD: {
+      await this.speak(i18n.doneCd())
+    } break
+>>>>>>> 56cc0d505ddc706895dd4a8d3c3c8a6ba4ec2c82
     case MODE_DONE_CAT:
       await this.speak(i18n.doneCat()) 
       break
@@ -272,7 +687,6 @@ class Root extends nue.Root {
   async speakText () {
     let text = fixSpeakText(this.model.refText.value).trim()
     text = text.length ? text : i18n.textIsEmpty()
-    console.log(`[${text}]`)
 
     try {
       await this.speak(text)
