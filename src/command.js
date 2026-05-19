@@ -16,6 +16,7 @@ export class CommandResult {
     this.text = null /* String */
     this.exitStatus = 0 /* i32 */
     this.error = null /* Error */
+    this.args = [] /* Vec */
   }
 }
 
@@ -37,7 +38,15 @@ export class Command {
     case 'rm': return await this.execRm(result); break
     case 'mkdir': return await this.execMkdir(result); break
     case 'pwd': return await this.execPwd(result); break
+    case 'vi': return await this.execEditor(result); break
     }
+  }
+
+  async execEditor (_) {
+    let ret = new CommandResult()
+    ret.cmdName = 'vi'
+    ret.args = this.args
+    return ret
   }
 
   async execPwd (_) {

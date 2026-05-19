@@ -7,6 +7,7 @@ import {
   MODE_DONE_CD,
   MODE_DONE_CAT,
   MODE_HELP,
+  MODE_EDITOR,
 } from './consts.js'
 import i18n from './i18n.js'
 import {Command, CommandLine, CommandResult} from './command.js'
@@ -21,6 +22,7 @@ class MainModel {
     this.refFiles = nue.ref([])
     this.refText = nue.ref('')
     this.refProcStep = nue.ref(0)
+    this.refEditorArgs = nue.ref([])
   }
 }
 
@@ -153,36 +155,45 @@ class Shell extends nue.Div {
     
     let result = await cmdLine.exec()
     
-    if (result.cmdName === 'cd' && result.cwd) {
-      newCwd = result.cwd
-      this.model.refCwd.value = newCwd
-      this.model.refShellMode.value = MODE_DONE_CD
-    }
-
     tailRow.flozen()
 
-    if (result.cmdName === 'ls') {
+    switch (result.cmdName) {
+    case 'vi': {
+      this.model.refShellMode.value = MODE_EDITOR
+      this.model.refEditorArgs.value = result.args
+    } break
+    case 'cd': {
+      if (result.cwd) {
+        newCwd = result.cwd
+        this.model.refCwd.value = newCwd
+        this.model.refShellMode.value = MODE_DONE_CD
+      }
+    } break
+    case 'ls': {
       let text = result.files.join(' ')
       let p = new nue.P()
       p.setText(text)
       this.add(p)
       this.model.refFiles.value = result.files
       this.model.refShellMode.value = MODE_HAS_LIST_FILES
-    } else if (
-      (result.cmdName === 'cat' || result.cmdName === 'lcat') && 
-      result.text
-    ) {
-      this.model.refText.value = result.text
-      this.model.refShellMode.value = MODE_DONE_CAT      
-      for (let line of result.text.replace('\r\n', '\n').split('\n')) {
-        let p = new nue.P()
-        p.setText(line)
-        this.add(p)
+    } break
+    case 'cat':
+    case 'lcat': {
+      if (result.text) {
+        this.model.refText.value = result.text
+        this.model.refShellMode.value = MODE_DONE_CAT      
+        for (let line of result.text.replace('\r\n', '\n').split('\n')) {
+          let p = new nue.P()
+          p.setText(line)
+          this.add(p)
+        }
       }
-    } else if (result.cmdName === 'pwd') {
+    } break
+    case 'pwd': {
       let p = new nue.P()
       p.setText(result.text.trim())
       this.add(p)
+    } break
     }
 
     newRow.setLabelCwd(newCwd)
@@ -195,6 +206,371 @@ class Shell extends nue.Div {
   }
 }
 
+class EditorNotebook extends nue.Notebook {
+  constructor (model) {
+    super({ class: 'editor-notebook' })
+    this.model = model
+  }
+}
+
+class EditorPage extends nue.Div {
+  constructor (model, fname) {
+    super({
+      class: 'editor-page',
+      tabindex: 0,
+    }, {
+      events: ['keydown'],
+    })
+
+    this.model = model
+    this.fname = fname
+
+    this.buffer = new EditorBuffer()
+    this.buffer.path = fname
+
+    this.textLayer = new nue.Pre({
+      class: 'editor-page__text',
+    })
+
+    this.status = new nue.Div({
+      class: 'editor-page__status',
+    })
+
+    this.add(this.textLayer)
+    this.add(this.status)
+
+    this.render()
+  }
+
+  async onKeydown (ev) {
+    ev.preventDefault()
+    ev.stopPropagation()
+
+    console.log(ev.key)
+    alert('1')
+  }
+
+  focus () {
+    this.elem.focus()
+    alert('2')
+  }
+
+  render () {
+    let out = []
+
+    for (let y = 0; y < this.buffer.lines.length; y++) {
+      let line = this.buffer.lines[y]
+
+      if (y === this.buffer.cursorY) {
+        let x = this.buffer.cursorX
+
+        let left = line.slice(0, x)
+        let cur = line[x] || ' '
+        let right = line.slice(x + 1)
+
+        line =
+          left +
+          '[' + cur + ']' +
+          right
+      }
+
+      out.push(line)
+    }
+
+    this.textLayer.setText(out.join('\n'))
+
+    this.status.setText(
+      `${this.buffer.mode}  ${this.fname}  ${this.buffer.cursorY + 1}:${this.buffer.cursorX + 1}`
+    )
+  }
+
+  async onKeydown (ev) {
+    switch (this.buffer.mode) {
+    case 'NORMAL':
+      await this.onKeydownNormal(ev)
+      break
+
+    case 'INSERT':
+      await this.onKeydownInsert(ev)
+      break
+
+    case 'COMMAND':
+      await this.onKeydownCommand(ev)
+      break
+    }
+
+    this.render()
+  }
+
+  async onKeydownNormal (ev) {
+    switch (ev.key) {
+    case 'h':
+      this.moveCursor(-1, 0)
+      break
+
+    case 'j':
+      this.moveCursor(0, 1)
+      break
+
+    case 'k':
+      this.moveCursor(0, -1)
+      break
+
+    case 'l':
+      this.moveCursor(1, 0)
+      break
+
+    case 'i':
+      this.buffer.mode = 'INSERT'
+      break
+
+    case 'x':
+      this.deleteChar()
+      break
+
+    case ':':
+      this.buffer.mode = 'COMMAND'
+      this.buffer.command = ''
+      break
+
+    case 'o':
+      this.openBelow()
+      this.buffer.mode = 'INSERT'
+      break
+    }
+  }
+
+  async onKeydownInsert (ev) {
+    switch (ev.key) {
+    case 'Escape':
+      this.buffer.mode = 'NORMAL'
+      return
+
+    case 'Backspace':
+      this.backspace()
+      return
+
+    case 'Enter':
+      this.insertNewline()
+      return
+    }
+
+    if (ev.key.length === 1) {
+      this.insertChar(ev.key)
+    }
+  }
+
+  async onKeydownCommand (ev) {
+    switch (ev.key) {
+    case 'Escape':
+      this.buffer.mode = 'NORMAL'
+      return
+
+    case 'Enter':
+      await this.execCommand(this.buffer.command)
+      this.buffer.mode = 'NORMAL'
+      return
+
+    case 'Backspace':
+      this.buffer.command =
+        this.buffer.command.slice(0, -1)
+      return
+    }
+
+    if (ev.key.length === 1) {
+      this.buffer.command += ev.key
+    }
+  }
+
+  moveCursor (dx, dy) {
+    this.buffer.cursorY += dy
+
+    if (this.buffer.cursorY < 0) {
+      this.buffer.cursorY = 0
+    }
+
+    if (this.buffer.cursorY >= this.buffer.lines.length) {
+      this.buffer.cursorY =
+        this.buffer.lines.length - 1
+    }
+
+    let line =
+      this.buffer.lines[this.buffer.cursorY]
+
+    this.buffer.cursorX += dx
+
+    if (this.buffer.cursorX < 0) {
+      this.buffer.cursorX = 0
+    }
+
+    if (this.buffer.cursorX > line.length) {
+      this.buffer.cursorX = line.length
+    }
+  }
+
+  insertChar (ch) {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+
+    let line = this.buffer.lines[y]
+
+    this.buffer.lines[y] =
+      line.slice(0, x) +
+      ch +
+      line.slice(x)
+
+    this.buffer.cursorX++
+  }
+
+  deleteChar () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+
+    let line = this.buffer.lines[y]
+
+    if (x >= line.length) {
+      return
+    }
+
+    this.buffer.lines[y] =
+      line.slice(0, x) +
+      line.slice(x + 1)
+  }
+
+  backspace () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+
+    if (x <= 0) {
+      return
+    }
+
+    let line = this.buffer.lines[y]
+
+    this.buffer.lines[y] =
+      line.slice(0, x - 1) +
+      line.slice(x)
+
+    this.buffer.cursorX--
+  }
+
+  insertNewline () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+
+    let line = this.buffer.lines[y]
+
+    let left = line.slice(0, x)
+    let right = line.slice(x)
+
+    this.buffer.lines[y] = left
+
+    this.buffer.lines.splice(y + 1, 0, right)
+
+    this.buffer.cursorY++
+    this.buffer.cursorX = 0
+  }
+
+  openBelow () {
+    let y = this.buffer.cursorY
+
+    this.buffer.lines.splice(y + 1, 0, '')
+
+    this.buffer.cursorY++
+    this.buffer.cursorX = 0
+  }
+
+  async execCommand (cmd) {
+    switch (cmd) {
+    case 'q':
+      this.emit('quitEditor')
+      break
+
+    case 'w':
+      await this.save()
+      break
+
+    case 'wq':
+      await this.save()
+      this.emit('quitEditor')
+      break
+    }
+  }
+
+  async save () {
+    let text =
+      this.buffer.lines.join('\n')
+
+    await invoke('write_text_file', {
+      path: this.fname,
+      text,
+    })
+
+    this.buffer.modified = false
+  }
+}
+
+class EditorBuffer {
+  constructor () {
+    this.lines = ['']
+    this.cursorX = 0
+    this.cursorY = 0
+    this.mode = 'NORMAL'
+    this.command = ''
+    this.path = null
+    this.modified = false
+  }
+}
+
+class Editor extends nue.Div {
+  constructor (model) {
+    super({ class: 'editor' })
+
+    this.model = model
+
+    this.notebook =
+      new EditorNotebook(this.model)
+
+    this.add(this.notebook)
+  }
+
+  setup (args) {
+    this.notebook.clear()
+
+    if (!args.length) {
+      args = ['empty']
+    }
+
+    for (let arg of args) {
+      let page = new EditorPage(this.model, arg)
+
+      let tab =
+        new nue.NotebookTab(arg, page)
+
+      this.notebook.addTab(tab)
+    }
+
+    this.notebook.click(0)
+
+    setTimeout(() => {
+      let tab =
+        this.notebook.tabs.children[0]
+
+      tab.component.focus()
+    }, 100)
+  }
+
+  async receive (key, val) {
+    switch (key) {
+    case 'quitEditor':
+      this.hide()
+      this.model.refShellMode.value =
+        MODE_FIRST
+      break
+    }
+  }
+}
+
 class Root extends nue.Root {
   constructor () {
     super()
@@ -202,6 +578,10 @@ class Root extends nue.Root {
     
     this.shell = new Shell(this.model)
     this.add(this.shell)
+
+    this.editor = new Editor(this.model)
+    this.editor.hide()
+    this.add(this.editor)
 
     window.addEventListener('keydown', this.onWindowKeydown.bind(this))
     window.addEventListener('focus', this.onWindowFocus.bind(this))
@@ -211,13 +591,16 @@ class Root extends nue.Root {
 
   async onChangeShellMode (old, mode) {
     switch (mode) {
+    case MODE_EDITOR:
+      this.shell.hide()
+      this.editor.setup(this.model.refEditorArgs.value)
+      this.editor.show()
+      break
     case MODE_HAS_LIST_FILES:
       await this.speak(i18n.speakHasListFiles(this.model.refFiles.value))
       break
     case MODE_DONE_CD: {
-      let cwd = fixSpeakText(this.model.refCwd.value)
-      cwd = cwd.split('').join(' ')
-      await this.speak(i18n.doneCd(cwd))
+      await this.speak(i18n.doneCd())
     } break
     case MODE_DONE_CAT:
       await this.speak(i18n.doneCat()) 
@@ -280,7 +663,6 @@ class Root extends nue.Root {
   async speakText () {
     let text = fixSpeakText(this.model.refText.value).trim()
     text = text.length ? text : i18n.textIsEmpty()
-    console.log(`[${text}]`)
 
     try {
       await this.speak(text)

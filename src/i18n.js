@@ -29,8 +29,8 @@ export default new class I18N {
 		return this.get(`${i}番`, `Number ${i}`)
 	}
 
-	doneCd (cwd) {
-		return this.get(`現在のフォルダは、${cwd}`, '')
+	doneCd () {
+		return this.get(`作業フォルダを移動しました。`, '')
 	}
 
 	doneCat () {
