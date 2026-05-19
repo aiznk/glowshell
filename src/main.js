@@ -153,15 +153,13 @@ class Shell extends nue.Div {
     
     let result = await cmdLine.exec()
     
+    tailRow.flozen()
+
     if (result.cmdName === 'cd' && result.cwd) {
       newCwd = result.cwd
       this.model.refCwd.value = newCwd
       this.model.refShellMode.value = MODE_DONE_CD
-    }
-
-    tailRow.flozen()
-
-    if (result.cmdName === 'ls') {
+    } else if (result.cmdName === 'ls') {
       let text = result.files.join(' ')
       let p = new nue.P()
       p.setText(text)
@@ -210,11 +208,9 @@ class Root extends nue.Root {
     case MODE_HAS_LIST_FILES:
       await this.speak(i18n.speakHasListFiles(this.model.refFiles.value))
       break
-    case MODE_DONE_CD: {
-      let cwd = fixSpeakText(this.model.refCwd.value)
-      cwd = cwd.split('').join(' ')
-      await this.speak(i18n.doneCd(cwd))
-    } break
+    case MODE_DONE_CD:
+      await this.speak(i18n.doneCd())
+      break
     case MODE_DONE_CAT:
       await this.speak(i18n.doneCat()) 
       break
