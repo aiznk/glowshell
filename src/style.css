@@ -39,7 +39,7 @@
   pointer-events: none;
 }
 
-.cursor {
+.editor-cursor {
   background: #ddd;
   color: #111;
 }
