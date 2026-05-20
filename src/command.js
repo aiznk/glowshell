@@ -29,6 +29,12 @@ export class Command {
 
   async exec (result=null /* CommandResult */) {
     switch (this.name) {
+    default: {
+      let ret = new CommandResult()
+      ret.exitStatus = 1
+      ret.error = i18n.unknownCmdName()
+      return ret
+    } break
     case 'help': return await this.execHelp(result); break
     case 'cat': return await this.execCat(result); break
     case 'lcat': return await this.execLcat(result); break

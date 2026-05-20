@@ -1,24 +1,18 @@
 const { invoke } = window.__TAURI__.core;
 const { listen, emit } = window.__TAURI__.event;
 import * as nue from './nue/nue.js'
-import {
-  DEBUG,
-  MODE_FIRST,
-  MODE_HAS_LIST_FILES,
-  MODE_DONE_CD,
-  MODE_DONE_CAT,
-  MODE_HELP,
-  MODE_EDITOR,
-} from './consts.js'
+import {MODE_FIRST} from './consts.js'
 import i18n from './i18n.js'
 
 class EditorBuffer {
   constructor () {
-    this.lines = ['']
-    this.cursorX = 0
-    this.cursorY = 0
-    this.mode = 'NORMAL'
-    this.path = null
+    this.lines = [''] /* Vec<String> */
+    this.cursorX = 0 /* i32 */
+    this.cursorY = 0 /* i32 */
+    this.mode = 'NORMAL' /* String */
+    this.path = null /* String */
+    this.lastTime = Date.now()
+    this.lastKeys = []
   }
 }
 
@@ -40,6 +34,10 @@ class EditorHiddenInput extends nue.Textarea {
         'blur',
       ],
     })
+  }
+
+  focus () {
+    this.elem.focus()
   }
 
   async onKeydown (ev) {
@@ -76,8 +74,7 @@ class EditorPage extends nue.Div {
       class: 'editor-status',
     })
 
-    this.input =
-      new EditorHiddenInput()
+    this.input = new EditorHiddenInput()
 
     this.add(this.renderLayer)
     this.add(this.statusBar)
@@ -117,49 +114,78 @@ class EditorPage extends nue.Div {
   async onNormalKeydown (ev) {
     ev.preventDefault()
 
+    let lastTime = Date.now()
+    // console.log(lastTime, this.buffer.lastTime, lastTime - this.buffer.lastTime)
+    if (lastTime - this.buffer.lastTime >= 200) {
+      this.buffer.lastKeys = [ev.key]
+    } else {
+      this.buffer.lastKeys.push(ev.key)
+    }
+    this.buffer.lastTime = lastTime
+
     switch (ev.key) {
+    case 'd':
+      switch (this.buffer.lastKeys.join('')) {
+      case 'dd':
+        this.deleteLine()
+        break
+      case 'd':
+        if (ev.ctrlKey) {
+          this.moveCursor(0, 10)
+          this.buffer.lastKeys = []
+        }
+        break
+      }
+      break
+    case 'd':
+      break
     case 'h':
       this.moveCursor(-1, 0)
+      this.buffer.lastKeys = []
       break
     case 'j':
       this.moveCursor(0, 1)
+      this.buffer.lastKeys = []
       break
     case 'k':
       this.moveCursor(0, -1)
+      this.buffer.lastKeys = []
       break
     case 'l':
       this.moveCursor(1, 0)
+      this.buffer.lastKeys = []
       break
     case 'i':
       this.buffer.mode = 'INSERT'
       this.input.setValue('')
+      this.buffer.lastKeys = []
       break
     case 'a':
       this.buffer.mode = 'INSERT'
       this.moveCursor(1, 0)
       this.input.setValue('')
+      this.buffer.lastKeys = []
       break
     case 'A':
       this.buffer.mode = 'INSERT'
       this.moveCursorTail()
       this.input.setValue('')
+      this.buffer.lastKeys = []
       break
     case 'o':
       this.buffer.mode = 'INSERT'
       this.moveCursorTail()
       this.insertNewline()
       this.input.setValue('')
+      this.buffer.lastKeys = []
     case 'x':
       this.deleteChar()
-      break
-    case 'd':
-      if (ev.ctrlKey) {
-        this.moveCursor(0, 10)
-      }
+      this.buffer.lastKeys = []
       break
     case 'u':
       if (ev.ctrlKey) {
         this.moveCursor(0, -10)
+        this.buffer.lastKeys = []
       }
       break
     }
@@ -241,7 +267,7 @@ class EditorPage extends nue.Div {
 
   moveCursorTail () {
     let line = this.buffer.lines[this.buffer.cursorY]
-    this.buffer.cursorX = line.length
+    this.buffer.cursorX = line ? line.length : 0
   }
 
   moveCursor (dx, dy) {
@@ -264,7 +290,7 @@ class EditorPage extends nue.Div {
         0,
         Math.min(
           this.buffer.cursorX,
-          line.length
+          line ? line.length : 0,
         )
       )
   }
@@ -272,17 +298,28 @@ class EditorPage extends nue.Div {
   insertChar (ch) {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
+    if (!this.buffer.lines.length) {
+      this.buffer.lines.push('')
+    }
     let line = this.buffer.lines[y]
 
     this.buffer.lines[y] = line.slice(0, x) + ch + line.slice(x)
     this.buffer.cursorX++
   }
 
+  deleteLine () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+    this.buffer.lines.splice(y, 1)
+  }
+
   deleteChar () {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
     let line = this.buffer.lines[y]
-
+    if (!line) {
+      return
+    }
     if (x >= line.length) {
       return
     }
@@ -308,8 +345,8 @@ class EditorPage extends nue.Div {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
     let line = this.buffer.lines[y]
-    let left = line.slice(0, x)
-    let right = line.slice(x)
+    let left = line ? line.slice(0, x) : ''
+    let right = line ? line.slice(x) : ''
 
     this.buffer.lines[y] = left
     this.buffer.lines.splice(y + 1, 0, right)
