@@ -4,6 +4,14 @@ import * as nue from './nue/nue.js'
 import {MODE_FIRST} from './consts.js'
 import i18n from './i18n.js'
 
+function isAlnum (c) {
+  return /[a-zA-Z0-9]/.test(c)
+}
+
+function isSymbol (c) {
+  return !isAlnum(c)
+}
+
 class EditorBuffer {
   constructor () {
     this.lines = [''] /* Vec<String> */
@@ -122,12 +130,38 @@ class EditorPage extends nue.Div {
       this.buffer.lastKeys.push(ev.key)
     }
     this.buffer.lastTime = lastTime
+    console.log(this.buffer.lastKeys)
 
     switch (ev.key) {
+    case 'w':
+      switch (this.buffer.lastKeys.join('')) {
+      case 'w':
+        this.moveCursorWord()
+        this.buffer.lastKeys = []
+        break
+      case 'dw':
+        this.deleteWord()
+        this.buffer.lastKeys = []
+        break
+      }
+      break
+    case 'b':
+      switch (this.buffer.lastKeys.join('')) {
+      case 'b':
+        this.moveCursorWordBack()
+        this.buffer.lastKeys = []
+        break
+      case 'db':
+        this.deleteWordBack()
+        this.buffer.lastKeys = []
+        break
+      }
+      break
     case 'd':
       switch (this.buffer.lastKeys.join('')) {
       case 'dd':
         this.deleteLine()
+        this.buffer.lastKeys = []
         break
       case 'd':
         if (ev.ctrlKey) {
@@ -136,8 +170,6 @@ class EditorPage extends nue.Div {
         }
         break
       }
-      break
-    case 'd':
       break
     case 'h':
       this.moveCursor(-1, 0)
@@ -190,6 +222,90 @@ class EditorPage extends nue.Div {
       break
     }
   }
+
+  countWordBack () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX-1
+    let line = this.buffer.lines[y]
+    if (!line) {
+      return 0
+    }
+    let m = 0
+    let n = 0
+
+    // console.log(`line[${line}] x[${x}] len[${line.length}]`)
+    for (; x >= 0 && x <= line.length; x--) {
+      let c = line[x]
+      // console.log(`${m} [${c}]`)
+      if (m === 0) {
+        if (isAlnum(c)) {
+          m = 10
+          n--
+        } else {
+          m = 20
+          n--
+        }
+      } else if (m === 10) { // alnum
+        if (isAlnum(c)) {
+          n--
+        } else {
+          break
+        }
+      } else if (m === 20) { // !alnum
+        if (!isAlnum(c)) {
+          n--
+        } else {
+          break
+        }
+      }
+    }
+
+    return n
+  }
+
+  countWord () {
+    let y = this.buffer.cursorY
+    let x = this.buffer.cursorX
+    let line = this.buffer.lines[y]
+    if (!line) {
+      return 0
+    }
+    let m = 0
+    let n = 0
+
+    for (; x >= 0 && x <= line.length; x++) {
+      let c = line[x]
+      if (m === 0) {
+        if (isAlnum(c)) {
+          m = 10
+          n++
+        } else {
+          m = 20
+          n++
+        }
+      } else if (m === 10) { // alnum
+        if (isAlnum(c)) {
+          n++
+        } else {
+          break
+        }
+      } else if (m === 20) { // !alnum
+        if (!isAlnum(c)) {
+          n++
+        } else {
+          break
+        }
+      }
+    }
+
+    return n
+  }
+
+  /*
+  abc123
+  abc..def
+  123
+  */
 
   setNormal () {
     this.buffer.mode = 'NORMAL'
@@ -270,6 +386,16 @@ class EditorPage extends nue.Div {
     this.buffer.cursorX = line ? line.length : 0
   }
 
+  moveCursorWord () {
+    let n = this.countWord()
+    this.moveCursor(n, 0)
+  }
+
+  moveCursorWordBack () {
+    let n = this.countWordBack()
+    this.moveCursor(n, 0)
+  }
+
   moveCursor (dx, dy) {
     this.buffer.cursorY += dy
 
@@ -313,6 +439,31 @@ class EditorPage extends nue.Div {
     this.buffer.lines.splice(y, 1)
   }
 
+  deleteWordBack () {
+    let n = this.countWordBack()
+    let x = this.buffer.cursorX
+    let y = this.buffer.cursorY
+    let line = this.buffer.lines[y]
+    if (!line) {
+      return
+    }  
+
+    this.buffer.lines[y] = line.slice(0, x + n) + line.slice(x)
+    this.moveCursor(n, 0)
+  }
+  
+  deleteWord () {
+    let n = this.countWord()
+    let x = this.buffer.cursorX
+    let y = this.buffer.cursorY
+    let line = this.buffer.lines[y]
+    if (!line) {
+      return
+    }  
+
+    this.buffer.lines[y] = line.slice(0, x) + line.slice(x + n)
+  }
+  
   deleteChar () {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
