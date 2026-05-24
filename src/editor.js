@@ -142,8 +142,14 @@ class EditorPage extends nue.Div {
     this.buffer.lastTime = lastTime
     // console.log(this.buffer.lastKeys)
 
-    // console.log(ev.key)
+    console.log(ev.key)
     switch (ev.key) {
+    case '%':
+      if (ev.shiftKey) {
+        this.moveCursorTail()
+        this.buffer.lastKeys = []
+      }
+      break
     case 'Backspace':
       this.moveCursorBack()
       this.buffer.lastKeys = []
