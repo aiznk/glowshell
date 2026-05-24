@@ -220,10 +220,16 @@ class EditorPage extends nue.Div {
       this.moveCursor(1, 0)
       this.buffer.lastKeys = []
       break
+    case 'I':
+      this.buffer.mode = 'INSERT'
+      this.moveCursorHead()
+      this.input.setValue('')
+      this.buffer.lastKeys = []        
+      break
     case 'i':
       this.buffer.mode = 'INSERT'
       this.input.setValue('')
-      this.buffer.lastKeys = []
+      this.buffer.lastKeys = []        
       break
     case 'a':
       this.buffer.mode = 'INSERT'
@@ -435,6 +441,10 @@ class EditorPage extends nue.Div {
     this.statusBar.setText(
       `${this.buffer.mode} ${this.fname} ${this.buffer.cursorY+1}:${this.buffer.cursorX+1}`
     )
+  }
+
+  moveCursorHead () {
+    this.buffer.cursorX = 0
   }
 
   moveCursorTail () {
