@@ -21,6 +21,13 @@ class EditorBuffer {
     this.path = null /* String */
     this.lastTime = Date.now()
     this.lastKeys = [] /* Array<String> */
+
+    // Undo/Redo
+    this.undoStack = []
+    this.redoStack = []
+
+    // INSERTモード編集中か
+    this.insertSession = false
   }
 }
 
@@ -101,6 +108,71 @@ class EditorPage extends nue.Div {
     this.render()
   }
 
+  createSnapshot () {
+    return {
+      lines: [...this.buffer.lines],
+      cursorX: this.buffer.cursorX,
+      cursorY: this.buffer.cursorY,
+    }
+  }
+
+  restoreSnapshot (snap) {
+    this.buffer.lines = [...snap.lines]
+    this.buffer.cursorX = snap.cursorX
+    this.buffer.cursorY = snap.cursorY
+  }
+
+  pushUndo () {
+    this.buffer.undoStack.push(
+      this.createSnapshot()
+    )
+
+    // Undo後に編集したらRedo破棄
+    this.buffer.redoStack = []
+
+    // メモリ暴走防止
+    if (this.buffer.undoStack.length > 1000) {
+      this.buffer.undoStack.shift()
+    }
+  }
+
+  undo () {
+    let snap = this.buffer.undoStack.pop()
+    if (!snap) {
+      return
+    }
+
+    this.buffer.redoStack.push(
+      this.createSnapshot()
+    )
+
+    this.restoreSnapshot(snap)
+  }
+
+  redo () {
+    let snap = this.buffer.redoStack.pop()
+    if (!snap) {
+      return
+    }
+
+    this.buffer.undoStack.push(
+      this.createSnapshot()
+    )
+
+    this.restoreSnapshot(snap)
+  }
+
+  startInsertSession () {
+    if (!this.buffer.insertSession) {
+      this.pushUndo()
+      this.buffer.insertSession = true
+    }
+  }
+
+  endInsertSession () {
+    this.buffer.insertSession = false
+  }
+
   focus () {
     this.input.focus()
   }
@@ -144,6 +216,10 @@ class EditorPage extends nue.Div {
 
     // alert(ev.key)
     switch (ev.key) {
+    case '^':
+      this.moveCursorHead()
+      this.buffer.lastKeys = []
+      break
     case '%':
       if (ev.shiftKey) {
         this.moveCursorTail()
@@ -165,10 +241,12 @@ class EditorPage extends nue.Div {
         this.buffer.lastKeys = []
         break
       case 'dw':
+        this.pushUndo()
         this.deleteWord()
         this.buffer.lastKeys = []
         break
       case 'cw':
+        this.pushUndo()
         this.buffer.mode = 'INSERT'
         this.deleteWord()
         this.buffer.lastKeys = []
@@ -181,6 +259,7 @@ class EditorPage extends nue.Div {
         this.buffer.lastKeys = []
         break
       case 'db':
+        this.pushUndo()
         this.deleteWordBack()
         this.buffer.lastKeys = []
         break
@@ -189,6 +268,7 @@ class EditorPage extends nue.Div {
     case 'd':
       switch (this.buffer.lastKeys.join('')) {
       case 'dd':
+        this.pushUndo()
         this.deleteLine()
         this.buffer.lastKeys = []
         break
@@ -221,43 +301,51 @@ class EditorPage extends nue.Div {
       this.buffer.lastKeys = []
       break
     case 'I':
+      this.startInsertSession()
       this.buffer.mode = 'INSERT'
       this.moveCursorHead()
       this.input.setValue('')
       this.buffer.lastKeys = []        
       break
     case 'i':
+      this.startInsertSession()
       this.buffer.mode = 'INSERT'
       this.input.setValue('')
       this.buffer.lastKeys = []        
       break
     case 'a':
+      this.startInsertSession()
       this.buffer.mode = 'INSERT'
       this.moveCursor(1, 0)
       this.input.setValue('')
       this.buffer.lastKeys = []
       break
     case 'A':
+      this.startInsertSession()
       this.buffer.mode = 'INSERT'
       this.moveCursorTail()
       this.input.setValue('')
       this.buffer.lastKeys = []
       break
     case 'O':
+      this.startInsertSession()
       this.buffer.mode = 'INSERT'
       this.insertNewlineUp()
       this.buffer.lastKeys = []
       break
     case 'o':
+      this.startInsertSession()
       this.buffer.mode = 'INSERT'
       this.insertNewlineDown()
       this.buffer.lastKeys = []
       break
     case 'Delete':
+      this.pushUndo()
       this.deleteCharAndJoin()
       this.buffer.lastKeys = []
       break
     case 'x':
+      this.pushUndo()
       this.deleteChar()
       this.moveCursor(-1, 0)
       this.buffer.lastKeys = []
@@ -266,7 +354,60 @@ class EditorPage extends nue.Div {
       if (ev.ctrlKey) {
         this.moveCursor(0, -10)
         this.buffer.lastKeys = []
+      } else {
+        this.undo()
       }
+      break
+    case 'r':
+      if (ev.ctrlKey) {
+        this.redo()
+      }
+      break
+    }
+  }
+
+  async onInsertKeydown (ev) {
+    switch (ev.key) {
+    case 'ArrowLeft':
+      this.moveCursor(-1, 0)
+      this.buffer.lastKeys = []
+      break
+    case 'ArrowDown':
+      this.moveCursor(0, 1)
+      this.buffer.lastKeys = []
+      break
+    case 'ArrowUp':
+      this.moveCursor(0, -1)
+      this.buffer.lastKeys = []
+      break
+    case 'ArrowRight':
+      this.moveCursor(1, 0)
+      this.buffer.lastKeys = []
+      break
+    case 'Escape':
+      ev.preventDefault()
+      this.setNormal()
+      break
+    case 'Backspace':
+      ev.preventDefault()
+      this.backspace()
+      this.input.setValue('')
+      break
+    case 'Enter':
+      ev.preventDefault()
+      this.insertNewline()
+      this.input.setValue('')
+      break
+    case '[':
+      if (ev.ctrlKey) {
+        ev.preventDefault()
+        this.setNormal()
+        this.moveCursor(-1, 0)
+      }
+      break
+    case 'Delete':
+      this.deleteCharAndJoin()
+      this.buffer.lastKeys = []
       break
     }
   }
@@ -350,54 +491,9 @@ class EditorPage extends nue.Div {
   }
 
   setNormal () {
+    this.endInsertSession()
     this.buffer.mode = 'NORMAL'
     this.input.setValue('')
-  }
-
-  async onInsertKeydown (ev) {
-    switch (ev.key) {
-    case 'ArrowLeft':
-      this.moveCursor(-1, 0)
-      this.buffer.lastKeys = []
-      break
-    case 'ArrowDown':
-      this.moveCursor(0, 1)
-      this.buffer.lastKeys = []
-      break
-    case 'ArrowUp':
-      this.moveCursor(0, -1)
-      this.buffer.lastKeys = []
-      break
-    case 'ArrowRight':
-      this.moveCursor(1, 0)
-      this.buffer.lastKeys = []
-      break
-    case 'Escape':
-      ev.preventDefault()
-      this.setNormal()
-      break
-    case 'Backspace':
-      ev.preventDefault()
-      this.backspace()
-      this.input.setValue('')
-      break
-    case 'Enter':
-      ev.preventDefault()
-      this.insertNewline()
-      this.input.setValue('')
-      break
-    case '[':
-      if (ev.ctrlKey) {
-        ev.preventDefault()
-        this.setNormal()
-        this.moveCursor(-1, 0)
-      }
-      break
-    case 'Delete':
-      this.deleteCharAndJoin()
-      this.buffer.lastKeys = []
-      break
-    }
   }
 
   async onEditorInput (text) {
@@ -416,6 +512,29 @@ class EditorPage extends nue.Div {
     this.render()
   }
 
+  escapeText (text) {
+    let s = ''
+    for (let i = 0; i < text.length; i++) {
+      let c = text[i]
+      if (c === '<') {
+        s += '&lt;'
+      } else if (c === '>') {
+        s += '&gt;'
+      } else if (c === '&') {
+        s += '&amp;'
+      } else if (c === '"') {
+        s += '&quot;'
+      } else if (c === "'") {
+        s += '&#39;'
+      } else if (c === ' ') {
+        s += '&nbsp;'
+      } else {
+        s += c
+      }
+    }
+    return s
+  }
+
   render () {
     let out = []
 
@@ -428,7 +547,9 @@ class EditorPage extends nue.Div {
         let cur = line[x] || ' '
         let right = line.slice(x + 1)
 
-        line = left + `<span class="editor-cursor">${cur}</span>` + right
+        line = this.escapeText(left) + `<span class="editor-cursor">${cur}</span>` + this.escapeText(right)
+      } else {
+        line = this.escapeText(line)
       }
 
       out.push(line)
