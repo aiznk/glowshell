@@ -9,6 +9,7 @@ import {
   MODE_DONE_CAT,
   MODE_HELP,
   MODE_EDITOR,
+  FOCUS_TIMING_MS,
 } from './consts.js'
 import i18n from './i18n.js'
 import {Command, CommandLine, CommandResult} from './command.js'
@@ -245,14 +246,21 @@ class Root extends nue.Root {
   }
 
   async onWindowFocus () {
-    if (DEBUG) {
-      return
+    switch (this.model.refShellMode.value) {
+    case MODE_EDITOR:
+      setTimeout(() => {
+        this.editor.focus()
+      }, FOCUS_TIMING_MS)
+      break
     }
-    try {
-      await this.speak(i18n.focusedWindow())
-    } catch (e) {
-      console.error(e)
-      return 
+
+    if (!DEBUG) {
+      try {
+        await this.speak(i18n.focusedWindow())
+      } catch (e) {
+        console.error(e)
+        return 
+      }
     }
   }
 

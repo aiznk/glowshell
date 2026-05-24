@@ -14,20 +14,29 @@ function isSymbol (c) {
 
 class EditorBuffer {
   constructor () {
-    this.lines = [''] /* Vec<String> */
-    this.cursorX = 0 /* i32 */
-    this.cursorY = 0 /* i32 */
+    this.lines = [''] /* Array<String> */
+    this.cursorX = 0 /* Number */
+    this.cursorY = 0 /* Number */
     this.mode = 'NORMAL' /* String */
     this.path = null /* String */
     this.lastTime = Date.now()
-    this.lastKeys = []
+    this.lastKeys = [] /* Array<String> */
   }
 }
 
 class EditorNotebook extends nue.Notebook {
   constructor (model) {
-    super({ class: 'editor-notebook' })
+    super({
+      class: 'editor-notebook'
+    })
     this.model = model
+  }
+
+  focus () {
+    let tab = this.tabs.children[this.curIndex]
+    if (tab) {
+      tab.component.focus()
+    }
   }
 }
 
@@ -45,6 +54,7 @@ class EditorHiddenInput extends nue.Textarea {
   }
 
   focus () {
+    console.log('focused!')
     this.elem.focus()
   }
 
@@ -124,15 +134,24 @@ class EditorPage extends nue.Div {
 
     let lastTime = Date.now()
     // console.log(lastTime, this.buffer.lastTime, lastTime - this.buffer.lastTime)
-    if (lastTime - this.buffer.lastTime >= 200) {
+    if (lastTime - this.buffer.lastTime >= 300) {
       this.buffer.lastKeys = [ev.key]
     } else {
       this.buffer.lastKeys.push(ev.key)
     }
     this.buffer.lastTime = lastTime
-    console.log(this.buffer.lastKeys)
+    // console.log(this.buffer.lastKeys)
 
+    // console.log(ev.key)
     switch (ev.key) {
+    case 'Backspace':
+      this.moveCursorBack()
+      this.buffer.lastKeys = []
+      break
+    case 'Enter':
+      this.moveCursorDown()
+      this.buffer.lastKeys = []
+      break
     case 'w':
       switch (this.buffer.lastKeys.join('')) {
       case 'w':
@@ -171,18 +190,22 @@ class EditorPage extends nue.Div {
         break
       }
       break
+    case 'ArrowLeft':
     case 'h':
       this.moveCursor(-1, 0)
       this.buffer.lastKeys = []
       break
+    case 'ArrowDown':
     case 'j':
       this.moveCursor(0, 1)
       this.buffer.lastKeys = []
       break
+    case 'ArrowUp':
     case 'k':
       this.moveCursor(0, -1)
       this.buffer.lastKeys = []
       break
+    case 'ArrowRight':
     case 'l':
       this.moveCursor(1, 0)
       this.buffer.lastKeys = []
@@ -212,6 +235,7 @@ class EditorPage extends nue.Div {
       this.buffer.lastKeys = []
     case 'x':
       this.deleteChar()
+      this.moveCursor(-1, 0)
       this.buffer.lastKeys = []
       break
     case 'u':
@@ -301,12 +325,6 @@ class EditorPage extends nue.Div {
     return n
   }
 
-  /*
-  abc123
-  abc..def
-  123
-  */
-
   setNormal () {
     this.buffer.mode = 'NORMAL'
     this.input.setValue('')
@@ -314,6 +332,22 @@ class EditorPage extends nue.Div {
 
   async onInsertKeydown (ev) {
     switch (ev.key) {
+    case 'ArrowLeft':
+      this.moveCursor(-1, 0)
+      this.buffer.lastKeys = []
+      break
+    case 'ArrowDown':
+      this.moveCursor(0, 1)
+      this.buffer.lastKeys = []
+      break
+    case 'ArrowUp':
+      this.moveCursor(0, -1)
+      this.buffer.lastKeys = []
+      break
+    case 'ArrowRight':
+      this.moveCursor(1, 0)
+      this.buffer.lastKeys = []
+      break
     case 'Escape':
       ev.preventDefault()
       this.setNormal()
@@ -396,6 +430,31 @@ class EditorPage extends nue.Div {
     this.moveCursor(n, 0)
   }
 
+  moveCursorDown () {
+    let x = this.buffer.cursorX
+    let y = this.buffer.cursorY
+    if (y < this.buffer.lines.length) {
+      this.moveCursor(0, 1)
+      if (y+1 < this.buffer.lines.length) {
+        let line = this.buffer.lines[y+1]
+        this.buffer.cursorX = Math.min(x, line.length)
+      }
+    }
+  }
+
+  moveCursorBack () {
+    let x = this.buffer.cursorX
+    let y = this.buffer.cursorY
+    if (x === 0 && y > 0) {
+      let line = this.buffer.lines[y-1]
+      if (line != null) {
+        this.moveCursor(line.length, -1)
+      }
+    } else {
+      this.moveCursor(-1, 0)
+    }
+  }
+
   moveCursor (dx, dy) {
     this.buffer.cursorY += dy
 
@@ -435,7 +494,6 @@ class EditorPage extends nue.Div {
 
   deleteLine () {
     let y = this.buffer.cursorY
-    let x = this.buffer.cursorX
     this.buffer.lines.splice(y, 1)
   }
 
@@ -534,6 +592,10 @@ export class Editor extends nue.Div {
       let tab = this.notebook.tabs.children[0]
       tab.component.focus()
     }, 100)
+  }
+
+  focus () {
+    this.notebook.focus()
   }
 
   async receive (key, val) {
