@@ -168,6 +168,10 @@ class EditorPage extends nue.Div {
         this.deleteWord()
         this.buffer.lastKeys = []
         break
+      case 'cw':
+        this.buffer.mode = 'INSERT'
+        this.deleteWord()
+        this.buffer.lastKeys = []
       }
       break
     case 'b':
