@@ -142,7 +142,7 @@ class EditorPage extends nue.Div {
     this.buffer.lastTime = lastTime
     // console.log(this.buffer.lastKeys)
 
-    console.log(ev.key)
+    // alert(ev.key)
     switch (ev.key) {
     case '%':
       if (ev.shiftKey) {
@@ -241,6 +241,10 @@ class EditorPage extends nue.Div {
     case 'o':
       this.buffer.mode = 'INSERT'
       this.insertNewlineDown()
+      this.buffer.lastKeys = []
+      break
+    case 'Delete':
+      this.deleteCharAndJoin()
       this.buffer.lastKeys = []
       break
     case 'x':
@@ -378,6 +382,10 @@ class EditorPage extends nue.Div {
         this.setNormal()
         this.moveCursor(-1, 0)
       }
+      break
+    case 'Delete':
+      this.deleteCharAndJoin()
+      this.buffer.lastKeys = []
       break
     }
   }
@@ -532,6 +540,22 @@ class EditorPage extends nue.Div {
     this.buffer.lines[y] = line.slice(0, x) + line.slice(x + n)
   }
   
+  deleteCharAndJoin () {
+    let x = this.buffer.cursorX
+    let y = this.buffer.cursorY
+    let line = this.buffer.lines[y]
+    if (x === line.length) {
+      // join
+      let line2 = this.buffer.lines[y+1]
+      if (line2) {
+        this.buffer.lines[y] = line.slice(0, x) + line2.slice(0)
+        this.buffer.lines.splice(y+1, 1)
+      }
+    } else {
+      this.deleteChar()
+    }
+  }
+
   deleteChar () {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
