@@ -12,6 +12,10 @@ function isSymbol (c) {
   return !isAlnum(c)
 }
 
+function isCommandChar (c) {
+  return /[a-zA-Z0-9\_\-\ \.]/.test(c)
+}
+
 class EditorBuffer {
   constructor () {
     this.lines = [''] /* Array<String> */
@@ -21,6 +25,7 @@ class EditorBuffer {
     this.path = null /* String */
     this.lastTime = Date.now()
     this.lastKeys = [] /* Array<String> */
+    this.command = '' /* String */
 
     // Undo/Redo
     this.undoStack = []
@@ -28,6 +33,71 @@ class EditorBuffer {
 
     // INSERTモード編集中か
     this.insertSession = false
+  }
+}
+
+export class EditorCommandResult {
+  constructor () {
+    this.cmdName = null
+    this.text = null
+  }
+}
+
+export class EditorCommand {
+  constructor (buffer /* EditorBuffer */) {
+    this.buffer = buffer
+    this.name = null
+    this.args = []
+  }
+
+  parse (scmd) {
+    let toks = scmd.trim().split(' ')
+    if (!toks.length) {
+      return
+    }
+
+    this.name = toks[0]
+
+    if (toks.length >= 2) {
+      toks.shift()
+      this.args = toks
+    }
+  }
+
+  async exec () {
+    let ret = new EditorCommandResult()
+
+    switch (this.name) {
+    case 'q':
+    case 'quit':
+      ret.cmdName = 'quit'
+      break
+    case 'w':
+    case 'write':
+      ret.cmdName = 'write'
+      try {
+        await invoke('editor_cmd_write', {
+          content: this.buffer.lines.join('\n'),
+          args: this.args,
+        })
+      } catch (e) {
+        throw e
+      }
+      break
+    case 'r':
+    case 'read': {
+      ret.cmdName = 'read'
+      try {
+        ret.text = await invoke('editor_cmd_read', {
+          args: this.args,
+        })
+      } catch (e) {
+        throw e
+      }
+    } break
+    }
+
+    return ret
   }
 }
 
@@ -105,6 +175,21 @@ class EditorPage extends nue.Div {
     this.add(this.statusBar)
     this.add(this.input)
 
+    this.render()
+  }
+
+  async load () {
+    let text
+
+    try {
+      text = await invoke('editor_cmd_read', {
+        args: [this.fname],
+      })
+    } catch (e) {
+      throw e
+    }
+
+    this.buffer.lines = text.replace('\r\n', '\n').split('\n')
     this.render()
   }
 
@@ -196,26 +281,85 @@ class EditorPage extends nue.Div {
     case 'INSERT':
       await this.onInsertKeydown(ev)
       break
+    case 'COMMAND':
+      await this.onCommandKeydown(ev)
+      break
     }
 
     this.render()
+  }
+
+  async onCommandKeydown (ev) {
+    ev.preventDefault()
+
+    switch (ev.key) {
+    case 'Escape':
+      this.buffer.mode = 'NORMAL'
+      break
+    case 'Backspace':
+      this.buffer.command = this.buffer.command.substring(0, this.buffer.command.length-1)
+      break
+    case 'Enter':
+      await this.enterCommand()
+      break
+    default:
+      if (isCommandChar(ev.key)) {
+        this.buffer.command += ev.key
+      }
+      break
+    }
+  }
+
+  async enterCommand () {
+    this.buffer.mode = 'NORMAL'
+    let scmd = this.buffer.command
+    this.buffer.command = ''
+
+    let cmd = new EditorCommand(this.buffer)
+    let result
+
+    try {
+      cmd.parse(scmd)
+    } catch (e) {
+      console.error(e)
+      this.buffer.command = ''+e
+      return
+    }
+
+    try {
+      result = await cmd.exec() 
+    } catch (e) {
+      console.error(e)
+      this.buffer.command = ''+e
+      return
+    }
+
+    switch (result.cmdName) {
+    case 'read': {
+      let lines = result.text.replace('\r\n', '\n').split('\n')
+      this.buffer.lines = lines
+    } break
+    case 'quit':
+      this.model.refShellMode.value = MODE_FIRST
+      break
+    }
   }
 
   async onNormalKeydown (ev) {
     ev.preventDefault()
 
     let lastTime = Date.now()
-    // console.log(lastTime, this.buffer.lastTime, lastTime - this.buffer.lastTime)
     if (lastTime - this.buffer.lastTime >= 300) {
       this.buffer.lastKeys = [ev.key]
     } else {
       this.buffer.lastKeys.push(ev.key)
     }
     this.buffer.lastTime = lastTime
-    // console.log(this.buffer.lastKeys)
 
-    // alert(ev.key)
     switch (ev.key) {
+    case ':':
+      this.buffer.mode = 'COMMAND'
+      break
     case '^':
       this.moveCursorHead()
       this.buffer.lastKeys = []
@@ -500,19 +644,22 @@ class EditorPage extends nue.Div {
   }
 
   async onEditorInput (text) {
-    if (this.buffer.mode !== 'INSERT') {
-      return
-    }
-    if (!text.length) {
-      return
-    }
+    switch (this.buffer.mode) {
+    default:
+      break
+    case 'INSERT':
+      if (!text.length) {
+        return
+      }
 
-    for (let ch of text) {
-      this.insertChar(ch)
-    }
+      for (let ch of text) {
+        this.insertChar(ch)
+      }
 
-    this.input.setValue('')
-    this.render()
+      this.input.setValue('')
+      this.render()
+      break
+    }
   }
 
   escapeText (text) {
@@ -575,9 +722,17 @@ class EditorPage extends nue.Div {
       out.join('\n')
     )
 
-    this.statusBar.setText(
-      `${this.buffer.mode} ${this.fname} ${this.buffer.cursorY+1}:${this.buffer.cursorX+1}`
-    )
+    switch (this.buffer.mode) {
+    case 'COMMAND':
+      this.statusBar.setText(`:${this.buffer.command}`)
+      // TODO
+      break
+    default:
+      this.statusBar.setText(
+        `${this.buffer.mode} ${this.fname} ${this.buffer.cursorY+1}:${this.buffer.cursorX+1}`
+      )
+      break
+    }
   }
 
   moveCursorHead () {
@@ -778,16 +933,24 @@ export class Editor extends nue.Div {
     this.add(this.notebook)
   }
 
-  setup (args) {
+  async setup (args) {
     this.notebook.clear()
 
     if (!args.length) {
       args = ['empty']
     }
 
-    for (let arg of args) {
-      let page = new EditorPage(this.model, arg)
-      let tab = new nue.NotebookTab(arg, page)
+    for (let fname of args) {
+      let page = new EditorPage(this.model, fname)
+
+      try {
+        await page.load()
+      } catch (e) {
+        console.error(e)
+        continue
+      }
+
+      let tab = new nue.NotebookTab(fname, page)
       this.notebook.addTab(tab)
     }
 

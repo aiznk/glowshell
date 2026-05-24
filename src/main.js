@@ -161,8 +161,8 @@ class Shell extends nue.Div {
 
     switch (result.cmdName) {
     case 'vi': {
-      this.model.refShellMode.value = MODE_EDITOR
       this.model.refEditorArgs.value = result.args
+      this.model.refShellMode.value = MODE_EDITOR
     } break
     case 'cd': {
       if (result.cwd) {
@@ -228,9 +228,14 @@ class Root extends nue.Root {
 
   async onChangeShellMode (old, mode) {
     switch (mode) {
+    case MODE_FIRST:
+      this.editor.hide()
+      this.shell.show()
+      this.shell.focus()
+      break
     case MODE_EDITOR:
       this.shell.hide()
-      this.editor.setup(this.model.refEditorArgs.value)
+      await this.editor.setup(this.model.refEditorArgs.value)
       this.editor.show()
       break
     case MODE_HAS_LIST_FILES:
