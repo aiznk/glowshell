@@ -405,6 +405,9 @@ class EditorPage extends nue.Div {
         this.moveCursor(-1, 0)
       }
       break
+    case 'Tab':
+      this.insertChar('\t')
+      break
     case 'Delete':
       this.deleteCharAndJoin()
       this.buffer.lastKeys = []
@@ -514,24 +517,34 @@ class EditorPage extends nue.Div {
 
   escapeText (text) {
     let s = ''
+
     for (let i = 0; i < text.length; i++) {
       let c = text[i]
-      if (c === '<') {
+      switch (c) {
+      case '<':
         s += '&lt;'
-      } else if (c === '>') {
+        break
+      case '>':
         s += '&gt;'
-      } else if (c === '&') {
+        break
+      case '&':
         s += '&amp;'
-      } else if (c === '"') {
+        break
+      case '"':
         s += '&quot;'
-      } else if (c === "'") {
+        break
+      case "'":
         s += '&#39;'
-      } else if (c === ' ') {
+        break
+      case ' ':
         s += '&nbsp;'
-      } else {
+        break
+      default:
         s += c
+        break
       }
     }
+
     return s
   }
 
@@ -550,6 +563,9 @@ class EditorPage extends nue.Div {
         line = this.escapeText(left) + `<span class="editor-cursor">${cur}</span>` + this.escapeText(right)
       } else {
         line = this.escapeText(line)
+      }
+      if (line === '') {
+        line = ' '
       }
 
       out.push(line)
