@@ -539,15 +539,22 @@ class EditorPage extends nue.Div {
   backspace () {
     let y = this.buffer.cursorY
     let x = this.buffer.cursorX
-
-    if (x <= 0) {
-      return
-    }
-
     let line = this.buffer.lines[y]
 
-    this.buffer.lines[y] = line.slice(0, x - 1) + line.slice(x)
-    this.buffer.cursorX--
+    if (x <= 0 && y > 0) {
+      this.buffer.lines.splice(y, 1)
+      if (y-1 >= 0) {
+        let line = this.buffer.lines[y-1]
+        x = line.length
+      }
+      this.buffer.cursorX = x
+      this.buffer.cursorY--
+    } else {
+      this.buffer.lines[y] = line.slice(0, x - 1) + line.slice(x)
+      if (this.buffer.cursorX) {
+        this.buffer.cursorX--
+      }
+    }
   }
 
   insertNewline () {
