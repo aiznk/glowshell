@@ -1,6 +1,6 @@
 const { invoke } = window.__TAURI__.core;
 const { listen, emit } = window.__TAURI__.event;
-import * as nue from './nue/nue.js'
+import * as nue from './nue.js'
 import {MODE_FIRST} from './consts.js'
 import i18n from './i18n.js'
 
