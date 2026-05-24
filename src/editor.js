@@ -227,12 +227,16 @@ class EditorPage extends nue.Div {
       this.input.setValue('')
       this.buffer.lastKeys = []
       break
+    case 'O':
+      this.buffer.mode = 'INSERT'
+      this.insertNewlineUp()
+      this.buffer.lastKeys = []
+      break
     case 'o':
       this.buffer.mode = 'INSERT'
-      this.moveCursorTail()
-      this.insertNewline()
-      this.input.setValue('')
+      this.insertNewlineDown()
       this.buffer.lastKeys = []
+      break
     case 'x':
       this.deleteChar()
       this.moveCursor(-1, 0)
@@ -551,10 +555,23 @@ class EditorPage extends nue.Div {
       this.buffer.cursorY--
     } else {
       this.buffer.lines[y] = line.slice(0, x - 1) + line.slice(x)
+
       if (this.buffer.cursorX) {
         this.buffer.cursorX--
       }
     }
+  }
+
+  insertNewlineUp () {
+    let y = this.buffer.cursorY
+    this.buffer.lines.splice(y, 0, '')    
+    // this.buffer.cursorY
+  }
+
+  insertNewlineDown () {
+    let y = this.buffer.cursorY
+    this.buffer.lines.splice(y+1, 0, '')    
+    this.buffer.cursorY++
   }
 
   insertNewline () {
