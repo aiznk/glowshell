@@ -26,6 +26,7 @@ class EditorBuffer {
     this.lastTime = Date.now()
     this.lastKeys = [] /* Array<String> */
     this.command = '' /* String */
+    this.isEdited = false /* Boolean */
 
     // Undo/Redo
     this.undoStack = []
@@ -73,9 +74,16 @@ export class EditorCommand {
     let ret = new EditorCommandResult()
 
     switch (this.name) {
+    case '!q':
+    case '!quit':
+      ret.cmdName = 'quit'
+      break
     case 'q':
     case 'quit':
       ret.cmdName = 'quit'
+      if (this.buffer.isEdited) {
+        throw new Error(i18n.fileIsEditing())
+      }
       break
     case 'w':
     case 'write':
@@ -97,6 +105,7 @@ export class EditorCommand {
       }
 
       ret.fname = this.fname
+      this.buffer.isEdited = false
 
       break
     case 'r':
@@ -118,6 +127,7 @@ export class EditorCommand {
       }
 
       ret.fname = this.fname
+      this.buffer.isEdited = false
       
     } break
     }
@@ -292,6 +302,8 @@ class EditorPage extends nue.Div {
   }
 
   async receive (key, val) {
+    this.error = null
+    
     switch (key) {
     case 'editorKeydown':
       await this.onEditorKeydown(val)
@@ -347,12 +359,13 @@ class EditorPage extends nue.Div {
     let cmd = new EditorCommand(this.buffer, this.fname)
     let result
 
+    this.error = null
+
     try {
       cmd.parse(scmd)
     } catch (e) {
       console.error(e)
-      this.statusBar.setText(''+e)
-      this.render()
+      this.error = e
       return
     }
 
@@ -360,8 +373,7 @@ class EditorPage extends nue.Div {
       result = await cmd.exec() 
     } catch (e) {
       console.error(e)
-      this.statusBar.setText('Error!')
-      this.render()
+      this.error = e
       return
     }
 
@@ -692,6 +704,7 @@ class EditorPage extends nue.Div {
         this.insertChar(ch)
       }
 
+      this.buffer.isEdited = true
       this.input.setValue('')
       this.render()
       break
@@ -772,6 +785,9 @@ class EditorPage extends nue.Div {
         `${this.buffer.mode} ${fname} ${this.buffer.cursorY+1}:${this.buffer.cursorX+1}`
       )
     } break
+    }
+    if (this.error) {
+      this.statusBar.setText(''+this.error)
     }
   }
 

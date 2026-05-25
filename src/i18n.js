@@ -13,6 +13,10 @@ export default new class I18N {
 		}
 	}
 
+	fileIsEditing () {
+		return this.get('ファイルが変更されています。')
+	}
+
 	speakHasListFiles (files) {
 		if (files.length) {
 			return this.get('ファイルを複数取得しました。読み上げる場合は、Control Q、をタイプしてください。', '')
