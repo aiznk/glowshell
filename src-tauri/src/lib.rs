@@ -193,51 +193,41 @@ fn get_cwd() -> StdResult<PathBuf, Error> {
 #[tauri::command]
 async fn editor_cmd_write(
     content: String, 
-    args: Vec<String>,
+    fname: String,
 ) -> StdResult<(), Error> {
     let cwd = get_cwd()?;
+    let path = PathBuf::from(&fname);
+    let target_path = if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    };
+    let mut file = match std::fs::File::create(&target_path) {
+        Ok(v) => v,
+        Err(e) => return err_file_io!("{}", i18n::failed_to_create_file(&target_path)),
+    };
 
-    for arg in args {
-        let path = PathBuf::from(&arg);
-
-        let target_path = if path.is_absolute() {
-            path
-        } else {
-            cwd.join(path)
-        };
-
-        let mut file = match std::fs::File::create(&target_path) {
-            Ok(v) => v,
-            Err(e) => return err_file_io!("{}", i18n::failed_to_create_file(&target_path)),
-        };
-
-        let _ = write!(file, "{}", content);
-    }
+    let _ = write!(file, "{}", content);
 
     Ok(())
 }
 
 #[tauri::command]
-async fn editor_cmd_read(args: Vec<String>) -> StdResult<String, Error> {
+async fn editor_cmd_read(fname: String) -> StdResult<String, Error> {
     let cwd = get_cwd()?;
     let mut content = String::new();
-    
-    for arg in args {
-        let path = PathBuf::from(&arg);
+    let path = PathBuf::from(&fname);
+    let target_path = if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    };
+    let text = match std::fs::read_to_string(&target_path) {
+        Ok(v) => v,
+        Err(e) => return err_file_io!("{}", i18n::failed_to_read_file(&target_path)),
+    };
 
-        let target_path = if path.is_absolute() {
-            path
-        } else {
-            cwd.join(path)
-        };
-
-        let text = match std::fs::read_to_string(&target_path) {
-            Ok(v) => v,
-            Err(e) => return err_file_io!("{}", i18n::failed_to_read_file(&target_path)),
-        };
-
-        content.push_str(&text);
-    }
+    content.push_str(&text);
 
     Ok(content)
 }

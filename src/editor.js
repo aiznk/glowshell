@@ -40,12 +40,17 @@ export class EditorCommandResult {
   constructor () {
     this.cmdName = null
     this.text = null
+    this.fname = null
   }
 }
 
 export class EditorCommand {
-  constructor (buffer /* EditorBuffer */) {
+  constructor (
+    buffer /* EditorBuffer */,
+    fname /* String */,
+  ) {
     this.buffer = buffer
+    this.fname = fname
     this.name = null
     this.args = []
   }
@@ -75,25 +80,45 @@ export class EditorCommand {
     case 'w':
     case 'write':
       ret.cmdName = 'write'
+
+      if (this.args.length && this.fname == null) {
+        this.fname = this.args[0]
+      }
+      if (this.fname == null) {
+        throw new Error(i18n.invalidArgs())
+      }
       try {
         await invoke('editor_cmd_write', {
           content: this.buffer.lines.join('\n'),
-          args: this.args,
+          fname: this.fname,
         })
       } catch (e) {
         throw e
       }
+
+      ret.fname = this.fname
+
       break
     case 'r':
     case 'read': {
       ret.cmdName = 'read'
+
+      if (this.args.length && this.fname == null) {
+        this.fname = this.args[0]
+      }
+      if (this.fname == null) {
+        throw new Error(i18n.invalidArgs())
+      }
       try {
         ret.text = await invoke('editor_cmd_read', {
-          args: this.args,
+          fname: this.fname,
         })
       } catch (e) {
         throw e
       }
+
+      ret.fname = this.fname
+      
     } break
     }
 
@@ -181,9 +206,13 @@ class EditorPage extends nue.Div {
   async load () {
     let text
 
+    if (this.fname == null) {
+      return
+    }
+
     try {
       text = await invoke('editor_cmd_read', {
-        args: [this.fname],
+        fname: this.fname,
       })
     } catch (e) {
       throw e
@@ -315,14 +344,15 @@ class EditorPage extends nue.Div {
     let scmd = this.buffer.command
     this.buffer.command = ''
 
-    let cmd = new EditorCommand(this.buffer)
+    let cmd = new EditorCommand(this.buffer, this.fname)
     let result
 
     try {
       cmd.parse(scmd)
     } catch (e) {
       console.error(e)
-      this.buffer.command = ''+e
+      this.statusBar.setText(''+e)
+      this.render()
       return
     }
 
@@ -330,14 +360,20 @@ class EditorPage extends nue.Div {
       result = await cmd.exec() 
     } catch (e) {
       console.error(e)
-      this.buffer.command = ''+e
+      this.statusBar.setText('Error!')
+      this.render()
       return
     }
 
     switch (result.cmdName) {
+    case 'write':
+      this.fname = result.fname
+      break
     case 'read': {
       let lines = result.text.replace('\r\n', '\n').split('\n')
       this.buffer.lines = lines
+      this.input.setText(result.text)
+      this.fname = result.fname
     } break
     case 'quit':
       this.model.refShellMode.value = MODE_FIRST
@@ -725,13 +761,17 @@ class EditorPage extends nue.Div {
     switch (this.buffer.mode) {
     case 'COMMAND':
       this.statusBar.setText(`:${this.buffer.command}`)
-      // TODO
       break
-    default:
+    default: {
+      let fname = this.fname
+      if (fname == null) {
+        fname = ''
+      }
+      // alert(this.fname)
       this.statusBar.setText(
-        `${this.buffer.mode} ${this.fname} ${this.buffer.cursorY+1}:${this.buffer.cursorX+1}`
+        `${this.buffer.mode} ${fname} ${this.buffer.cursorY+1}:${this.buffer.cursorX+1}`
       )
-      break
+    } break
     }
   }
 
@@ -937,11 +977,14 @@ export class Editor extends nue.Div {
     this.notebook.clear()
 
     if (!args.length) {
-      args = ['empty']
+      args = [null]
     }
 
     for (let fname of args) {
       let page = new EditorPage(this.model, fname)
+      if (fname == null) {
+        fname = 'empty'
+      }
 
       try {
         await page.load()
