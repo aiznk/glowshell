@@ -1,5 +1,5 @@
 export const DEBUG = true
-export const COMMAND_NAMES = ['ls', 'lcat', 'cd', 'cat']
+export const COMMAND_NAMES = ['ls', 'lcat', 'cd', 'cat', 'vi']
 export const FOCUS_TIMING_MS = 100
 export const MODE_FIRST = 'MODE_FIRST'
 export const MODE_HAS_LIST_FILES = 'MODE_HAS_LIST_FILES'
