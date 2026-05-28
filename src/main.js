@@ -237,6 +237,7 @@ class Root extends nue.Root {
       this.shell.hide()
       await this.editor.setup(this.model.refEditorArgs.value)
       this.editor.show()
+      await this.speak(i18n.openedEditor())
       break
     case MODE_HAS_LIST_FILES:
       await this.speak(i18n.speakHasListFiles(this.model.refFiles.value))
@@ -401,7 +402,9 @@ class Root extends nue.Root {
     case 'keydownShellInput':
       await this.speak(fixSpeakText(val.key))
       break
-    case 'speak': await this.speak(val); break
+    case 'speak':
+      await this.speak(val)
+      break
     }
   }
 

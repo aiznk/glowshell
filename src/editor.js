@@ -1,6 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 const { listen, emit } = window.__TAURI__.event;
 import * as nue from './nue.js'
+import {fixSpeakText} from './utils.js'
 import {MODE_FIRST} from './consts.js'
 import i18n from './i18n.js'
 
@@ -380,17 +381,30 @@ class EditorPage extends nue.Div {
     switch (result.cmdName) {
     case 'write':
       this.fname = result.fname
+      await this.emit('speak', i18n.writedFile())
       break
     case 'read': {
       let lines = result.text.replace('\r\n', '\n').split('\n')
       this.buffer.lines = lines
+      this.buffer.cursorX = 0
+      this.buffer.cursorY = 0
       this.input.setText(result.text)
       this.fname = result.fname
+      await this.emit('speak', i18n.readedFile() + this.getSpeakStatus())
     } break
     case 'quit':
       this.model.refShellMode.value = MODE_FIRST
+      await this.emit('speak', i18n.endEditorMode())
       break
     }
+  }
+
+  getSpeakStatus () {
+    return `${this.buffer.cursorY+1}、${this.buffer.cursorX+1}`
+  }
+
+  async speakStatus () {
+      await this.emit('speak', this.getSpeakStatus())
   }
 
   async onNormalKeydown (ev) {
@@ -476,21 +490,25 @@ class EditorPage extends nue.Div {
     case 'h':
       this.moveCursor(-1, 0)
       this.buffer.lastKeys = []
+      await this.speakStatus()
       break
     case 'ArrowDown':
     case 'j':
       this.moveCursor(0, 1)
       this.buffer.lastKeys = []
+      await this.speakStatus()
       break
     case 'ArrowUp':
     case 'k':
       this.moveCursor(0, -1)
       this.buffer.lastKeys = []
+      await this.speakStatus()
       break
     case 'ArrowRight':
     case 'l':
       this.moveCursor(1, 0)
       this.buffer.lastKeys = []
+      await this.speakStatus()
       break
     case 'I':
       this.startInsertSession()
@@ -1027,6 +1045,9 @@ export class Editor extends nue.Div {
 
   async receive (key, val) {
     switch (key) {
+    default:
+      await this.emit(key, val)
+      break
     case 'quitEditor':
       this.hide()
       this.model.refShellMode.value = MODE_FIRST

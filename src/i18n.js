@@ -13,6 +13,22 @@ export default new class I18N {
 		}
 	}
 
+	openedEditor () {
+		return this.get('エディタを開きました。ヘルプは、Control H、です。')
+	}
+
+	writedFile () {
+		return this.get('ファイルを書き込みました。')
+	}
+
+	readedFile () {
+		return this.get('ファイルを読み込みました。')
+	}
+
+	endEditorMode () {
+		return this.get('エディタを終了します。')
+	}
+
 	fileIsEditing () {
 		return this.get('ファイルが変更されています。')
 	}
