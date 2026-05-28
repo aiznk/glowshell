@@ -21,3 +21,21 @@ export function fixSpeakText (text) {
     .replace(/\-/g, 'ハイフン')
     .replace(/ /g, 'スペース')
 }
+
+export async function readFromClipboard () {
+  return new Promise((resolve, reject) => {
+    navigator.clipboard.readText().then(text => {
+      resolve(text)
+    })
+  })
+}
+
+export async function writeToClipboard (text) {
+  return new Promise((resolve, reject) => {
+    navigator.clipboard.writeText(text).then(() => {
+      resolve()
+    }, () => {
+      reject()
+    })
+  })
+}

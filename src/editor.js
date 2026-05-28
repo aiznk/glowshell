@@ -1,7 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 const { listen, emit } = window.__TAURI__.event;
 import * as nue from './nue.js'
-import {fixSpeakText} from './utils.js'
+import {fixSpeakText, writeToClipboard, readFromClipboard} from './utils.js'
 import {MODE_FIRST} from './consts.js'
 import i18n from './i18n.js'
 
@@ -28,6 +28,7 @@ class EditorBuffer {
     this.lastKeys = [] /* Array<String> */
     this.command = '' /* String */
     this.isEdited = false /* Boolean */
+    this.visualLineStartCursorY = 0
 
     // Undo/Redo
     this.undoStack = []
@@ -172,7 +173,11 @@ class EditorHiddenInput extends nue.Textarea {
   }
 
   async onKeydown (ev) {
-    await this.emit('editorKeydown', ev)
+    try {
+      await this.emit('editorKeydown', ev)
+    } catch (e) {
+      throw e
+    }
   }
 
   async onInput (ev) {
@@ -326,9 +331,55 @@ class EditorPage extends nue.Div {
     case 'COMMAND':
       await this.onCommandKeydown(ev)
       break
+    case 'VISUAL LINE':
+      await this.onVisualLineKeydown(ev)
+      break
     }
 
     this.render()
+  }
+
+  async yankVisualLine () {
+    let sy = Math.min(this.buffer.visualLineStartCursorY, this.buffer.cursorY)
+    let ey = Math.max(this.buffer.visualLineStartCursorY, this.buffer.cursorY)
+    let lines = []
+
+    for (let y = sy; y < ey+1; y++) {
+      lines.push(this.buffer.lines[y])
+    }
+
+    await writeToClipboard(lines.join('\n'))
+    this.buffer.mode = 'NORMAL'
+    
+    await this.emit('speak', i18n.copied() + i18n.changeToNormalMode())
+  }
+
+  async onVisualLineKeydown (ev) {
+    switch (ev.key) {
+    case 'Escape':
+      this.buffer.mode = 'NORMAL'
+      await this.emit('speak', i18n.changeToNormalMode())
+      break
+    case 'y':
+      await this.yankVisualLine()
+      break
+    case 'h':
+      this.moveCursor(-1, 0)
+      await this.speakStatus()
+      break
+    case 'l':
+      this.moveCursor(1, 0)
+      await this.speakStatus()
+      break
+    case 'j':
+      this.moveCursor(0, 1)
+      await this.speakStatus()
+      break
+    case 'k':
+      this.moveCursor(0, -1)
+      await this.speakStatus()
+      break
+    } 
   }
 
   async onCommandKeydown (ev) {
@@ -573,7 +624,23 @@ class EditorPage extends nue.Div {
         this.redo()
       }
       break
+    case 'V':
+      this.buffer.mode = 'VISUAL LINE'
+      this.buffer.visualLineStartCursorY = this.buffer.cursorY
+      this.emit('speak', i18n.changeToViauslLineMode())
+      break
+    case 'p':
+      await this.paste()
+      break
     }
+  }
+
+  async paste () {
+    let y = this.buffer.cursorY
+    let text = await readFromClipboard()
+    let lines = text.replace('\r\n', '\n').split('\n')
+
+    this.buffer.lines.splice(y+1, 0, ...lines)
   }
 
   async onInsertKeydown (ev) {

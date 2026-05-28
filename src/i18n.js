@@ -13,8 +13,24 @@ export default new class I18N {
 		}
 	}
 
+	copied () {
+		return this.get('コピーしました。')
+	}
+
+	pasted () {
+		return this.get('ペーストしました。')
+	}
+
+	changeToNormalMode () {
+		return this.get('ノーマルモードです。')
+	}
+
+	changeToViauslLineMode () {
+		return this.get('ビジュアルラインモードです。')
+	}
+
 	openedEditor () {
-		return this.get('エディタを開きました。ヘルプは、Control H、です。')
+		return this.get('エディタを開きました。ヘルプは、Control エイチ、です。')
 	}
 
 	writedFile () {
